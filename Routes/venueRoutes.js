@@ -8,7 +8,7 @@ const router = express.Router();
 // ✅ Create Venue (with images)
 router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
   try {
-    const imagePaths = req.files?.map((file) => file.path.replace(/\\/g, '/'));
+    const imagePaths = req.files?.map((file) => file.path);
 
     const venue = new Venue({
       ...req.body,
@@ -98,19 +98,25 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
       );
 
       // Get newly uploaded image paths
-      const newImagePaths = req.files ? req.files.map((file) => file.path.replace(/\\/g, '/')) : [];
+      const newImagePaths = req.files ? req.files.map((file) => file.path) : [];
 
       // Final list of images
       imagePaths = [...keptImages, ...newImagePaths];
     }
 
+    const updateData = {
+      ...req.body,
+      mediaFiles: imagePaths,
+    };
+
+    // If the admin is not explicitly providing a status, reset it to pending (indicates vendor edit)
+    if (!req.body.status) {
+      updateData.status = "pending";
+    }
+
     const updatedVenue = await Venue.findByIdAndUpdate(
       req.params.id,
-      {
-        ...req.body,
-        mediaFiles: imagePaths,
-        status: req.body.status || "pending" // Auto-reset status for admin re-approval if not explicit
-      },
+      updateData,
       { new: true },
     );
 
