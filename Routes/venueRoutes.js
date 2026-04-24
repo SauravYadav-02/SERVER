@@ -23,6 +23,9 @@ router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
   }
 });
 
+
+
+
 // ✅ Get All Venues
 router.get("/", async (req, res) => {
   try {
@@ -32,6 +35,9 @@ router.get("/", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
 
 // ✅ 3. GET Venues by Vendor
 router.get("/vendor/:vendorId", async (req, res) => {
@@ -45,6 +51,9 @@ router.get("/vendor/:vendorId", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
 
 // ✅ 4. GET Single Venue (Full Details)
 router.get("/:id", async (req, res) => {
@@ -61,17 +70,21 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+
+
+
 // ✅ 5. UPDATE Venue (with optional new images)
 router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
   try {
     const venue = await Venue.findById(req.params.id);
 
-    // if (venue.vendorId !== req.body.vendorId) {
-    //   return res.status(403).json({ message: "Unauthorized" });
-    // }
-
     if (!venue) {
       return res.status(404).json({ message: "Venue not found" });
+    }
+
+    // ✅ Ownership check — only the venue's vendor can update it
+    if (req.body.vendorId && venue.vendorId.toString() !== req.body.vendorId) {
+      return res.status(403).json({ message: "Unauthorized: You do not own this venue" });
     }
 
     let imagePaths = venue.mediaFiles;
@@ -96,7 +109,6 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
           }
         })
       );
-
       // Get newly uploaded image paths
       const newImagePaths = req.files ? req.files.map((file) => file.path) : [];
 
@@ -126,6 +138,10 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
   }
 });
 
+
+
+
+
 // ✅ 6. DELETE Single Venue (with images)
 router.delete("/:id", async (req, res) => {
   try {
@@ -133,6 +149,12 @@ router.delete("/:id", async (req, res) => {
 
     if (!venue) {
       return res.status(404).json({ message: "Venue not found" });
+    }
+
+    // ✅ Ownership check — only the venue's vendor can delete it
+    const requestingVendorId = req.query.vendorId || req.body.vendorId;
+    if (requestingVendorId && venue.vendorId.toString() !== requestingVendorId) {
+      return res.status(403).json({ message: "Unauthorized: You do not own this venue" });
     }
 
     // delete images from folder
@@ -154,6 +176,9 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+
+
+
 // ✅ 7. PATCH Approve Venue
 router.patch("/:id/approve", async (req, res) => {
   try {
@@ -168,6 +193,9 @@ router.patch("/:id/approve", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
 
 // ✅ 8. PATCH Reject Venue
 router.patch("/:id/reject", async (req, res) => {

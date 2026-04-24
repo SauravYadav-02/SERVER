@@ -6,6 +6,7 @@ import userRoutes from "./Routes/userRoutes.js";
 import vendorRoutes from "./Routes/vendorRoutes.js";
 import adminRoutes  from "./Routes/adminRoutes.js";
 import venueRoutes from "./Routes/venueRoutes.js";
+import bookingRoutes from "./Routes/bookingRoutes.js";
 const app = express();
 
 app.use(cors());
@@ -21,6 +22,7 @@ app.use("/users", userRoutes);
 app.use("/vendors", vendorRoutes);
 app.use("/admin", adminRoutes );
 app.use("/venues", venueRoutes);
+app.use("/bookings", bookingRoutes);
 
 app.listen(3000,'0.0.0.0',()=>{
     console.log("Server running on 3000");
