@@ -4,6 +4,18 @@ import userUpload from "../middleare/userUpload.js";
 
 const router = express.Router();
 
+const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
+
+const buildUserResponse = (user, req) => {
+    const response = user.toObject ? user.toObject() : user;
+
+    if (response.profilePhoto) {
+        response.profilePhoto = `${req.protocol}://${req.get("host")}/${fixPath(response.profilePhoto)}`;
+    }
+
+    return response;
+};
+
 // Register with profile photo
 router.post("/register", userUpload.single("profilePhoto"), async (req, res) => {
     try {
@@ -20,7 +32,9 @@ router.post("/register", userUpload.single("profilePhoto"), async (req, res) => 
 
         const user = new User(userData);
         await user.save();
-        res.status(201).json({ message: "User registered", user });
+        const response = buildUserResponse(user, req);
+        delete response.password;
+        res.status(201).json({ message: "User registered", user: response });
     } catch (error) {
         console.error("REGISTRATION ERROR:", error);
         res.status(400).json({ message: "Registration failed", error: error.message });
@@ -37,7 +51,9 @@ router.post("/login", async (req, res) => {
             return res.status(400).json({ message: "Invalid credentials" });
         }
 
-        res.json({ message: "Login success", user });
+        const response = buildUserResponse(user, req);
+        delete response.password;
+        res.json({ message: "Login success", user: response });
     } catch (error) {
         res.status(500).json({ message: "Login failed", error: error.message });
     }
@@ -47,7 +63,8 @@ router.post("/login", async (req, res) => {
 router.get("/", async (req, res) => {
     try {
         const users = await User.find().select("-password");
-        res.json(users);
+        const response = users.map((user) => buildUserResponse(user, req));
+        res.json(response);
     } catch (error) {
         res.status(500).json({ message: "Failed to retrieve users", error: error.message });
     }
@@ -63,7 +80,7 @@ router.get("/:id", async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
 
-        res.json(user);
+        res.json(buildUserResponse(user, req));
     } catch (error) {
         res.status(500).json({ message: "Failed to retrieve user", error: error.message });
     }
@@ -98,10 +115,20 @@ router.put("/:id", userUpload.single("profilePhoto"), async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
 
-        res.json({ message: "User updated", user });
+        res.json({ message: "User updated", user: buildUserResponse(user, req) });
     } catch (error) {
         res.status(500).json({ message: "Failed to update user", error: error.message });
     }
 });
 
+// Soft delete a specific user by ID
+router.delete("/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findByIdAndUpdate(id, { deleted: true }, { new: true });
+        res.json({ message: "User soft deleted", user });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to soft delete user", error: error.message });
+    }
+});
 export default router;

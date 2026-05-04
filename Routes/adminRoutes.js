@@ -60,7 +60,25 @@ router.get("/venues/:id", isAdmin, async (req, res) => {
     }
 });
 
-// Admin: Update venue status
+// Admin: Update venue statusr
+router.put("/venues/:id/status", isAdmin, async (req, res) => {
+    try {
+        const { status } = req.body;
 
+        const venue = await Venue.findByIdAndUpdate(
+            req.params.id,
+            { status },
+            { new: true }
+        ).populate("vendorId", "fullName email phone businessName businessType address city state zip pincode status");
+
+        if (!venue) {
+            return res.status(404).json({ message: "Venue not found" });
+        }
+
+        res.json(buildVenueResponse(venue, req));
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 export default router;

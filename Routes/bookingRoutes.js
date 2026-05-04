@@ -85,11 +85,7 @@ router.put("/:bookingId/status", async (req, res) => {
     const { bookingId } = req.params;
     const { status } = req.body; // "approved" or "rejected"
 
-    const booking = await Booking.findByIdAndUpdate(
-      bookingId,
-      { status },
-      { new: true }
-    );
+    const booking = await Booking.findByIdAndUpdate(bookingId, { status }, { new: true });
 
     if (!booking) {
       return res.status(404).json({ error: "Booking not found" });
@@ -98,6 +94,20 @@ router.put("/:bookingId/status", async (req, res) => {
     res.json({ message: "Booking status updated", booking });
   } catch (error) {
     res.status(500).json({ error: "Failed to update booking status" });
+  }
+});
+
+// Get all bookings (admin route)
+router.get("/", async (req, res) => {
+  try {
+    const bookings = await Booking.find({})
+      .populate("userId", "name email phone")
+      .populate("vendorId", "fullName email phone businessName businessType")
+      .populate("venueId", "name address city state zip country")
+      .sort({ createdAt: -1 });
+    res.json({ bookings });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch all bookings" });
   }
 });
 

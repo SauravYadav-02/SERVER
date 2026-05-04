@@ -49,7 +49,7 @@ const vendorSchema = new mongoose.Schema(
     },
 
     password: {
-        type: String
+        type: String,
     },
 
     status: {

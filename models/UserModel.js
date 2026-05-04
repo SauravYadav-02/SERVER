@@ -24,47 +24,40 @@ const userSchema = new mongoose.Schema({
     },
     phone: {
         type: String,
-        required: false,
+        required: [true, "Phone number is required"],
         match: [/^\d{10}$/, "Please enter a valid 10-digit phone number"]
     },
     address: {
         type: String,
-        required: false,
+        required: [true, "Address is required"],
         trim: true,
         maxlength: [200, "Address cannot exceed 200 characters"]
     },
     city: {
         type: String,
-        required: false,
+        required: [true, "City is required"],
         trim: true,
         maxlength: [50, "City cannot exceed 50 characters"]
     },
     pinCode: {
         type: String,
-        required: false,
+        required: [true, "Pin code is required"],
         match: [/^\d{6}$/, "Please enter a valid 6-digit pin code"]
     },
     profilePhoto: {
         type: String,
         required: false,
         default: null
+    },
+    wishlist: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Venue"
+    }],
+    // deleted flag for soft delete
+    deleted: {
+        type: Boolean,
+        default: false
     }
-    // isVerified: {
-    //     type: Boolean,
-    //     default: false
-    // },
-    // verificationToken: {
-    //     type: String,
-    //     select: false
-    // },
-    // resetPasswordToken: {
-    //     type: String,
-    //     select: false
-    // },
-    // resetPasswordExpires: {
-    //     type: Date,
-    //     select: false
-    // }
 }, {
     timestamps: true
 });
