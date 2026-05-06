@@ -12,6 +12,7 @@ router.post("/", isAdmin, createPaymentHistoryEntry);
 router.get("/vendor/:vendorId", isVendor, getVendorPaymentHistory);
 
 // Get all payment history (admin only)
-router.get("/", isAdmin, getAllPayments);
+router.get("/",  getAllPayments);
+// router.get("/", isAdmin, getAllPayments);
 
 export default router;

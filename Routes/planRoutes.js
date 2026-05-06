@@ -20,8 +20,8 @@ const validatePlanBody = (body) => {
   if (price === undefined || isNaN(Number(price)) || Number(price) < 0) {
     errors.push("price is required and must be a non-negative number.");
   }
-  if (planType !== undefined && !["base", "addon"].includes(planType)) {
-    errors.push('planType must be either "base" or "addon".');
+  if (planType !== undefined && !["base", "full payment"].includes(planType)) {
+    errors.push('planType must be either "base" or "full payment".');
   }
 
   return errors;
@@ -36,8 +36,8 @@ router.get("/", async (req, res) => {
     if (req.query.type === "base") {
       query.$or = [{ planType: "base" }, { planType: { $exists: false } }];
     }
-    if (req.query.type === "addon") {
-      query.planType = "addon";
+    if (req.query.type === "full payment") {
+      query.planType = "full payment";
     }
 
     const plans = await Plan.find(query)
@@ -132,8 +132,8 @@ router.put("/:id", isAdmin, async (req, res) => {
       plan.price = Number(price);
     }
     if (planType !== undefined) {
-      if (!["base", "addon"].includes(planType)) {
-        return res.status(400).json({ success: false, message: 'planType must be either "base" or "addon".' });
+      if (!["base", "full payment"].includes(planType)) {
+        return res.status(400).json({ success: false, message: 'planType must be either "base" or "full payment".' });
       }
       plan.planType = planType;
     }

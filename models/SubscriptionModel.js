@@ -10,7 +10,7 @@ const planSnapshotSchema = {
   },
 };
 
-const addOnSubscriptionSchema = new mongoose.Schema(
+const fullPaymentSubscriptionSchema = new mongoose.Schema(
   {
     planId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -70,8 +70,8 @@ const subscriptionSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
-    addOns: {
-      type: [addOnSubscriptionSchema],
+    fullPayments: {
+      type: [fullPaymentSubscriptionSchema],
       default: [],
     },
 
@@ -87,6 +87,6 @@ const subscriptionSchema = new mongoose.Schema(
 subscriptionSchema.index({ status: 1 });
 subscriptionSchema.index({ endDate: 1 });
 subscriptionSchema.index({ graceEndDate: 1 });
-subscriptionSchema.index({ "addOns.status": 1, "addOns.endDate": 1 });
+subscriptionSchema.index({ "fullPayments.status": 1, "fullPayments.endDate": 1 });
 
 export default mongoose.model("Subscription", subscriptionSchema);

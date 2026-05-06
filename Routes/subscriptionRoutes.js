@@ -1,20 +1,20 @@
 import express from "express";
-import { isVendor } from "../middleare/isVendor.js";
-import { isAdmin } from "../middleare/isAdmin.js";
 import {
-  addOnSubscription,
-  addOnSubscriptionByAdmin,
+  createSubscriptionPayment,
+  confirmSubscriptionPayment,
+  fullPaymentSubscriptionByAdmin,
   assignSubscriptionByAdmin,
   getAllSubscriptionsForAdmin,
   getQueue,
   getSubscription,
   getVendorSubscriptionForAdmin,
-  purchasePlan,
 } from "../services/subscriptionService.js";
+import { isVendor } from "../middleare/isVendor.js";
+import { isAdmin } from "../middleare/isAdmin.js";
 
 const router = express.Router();
 
-router.post("/purchase", isVendor, async (req, res) => {
+router.post("/create-payment", isVendor, async (req, res) => {
   try {
     const { planId } = req.body;
 
@@ -22,23 +22,23 @@ router.post("/purchase", isVendor, async (req, res) => {
       return res.status(400).json({ success: false, message: "planId is required." });
     }
 
-    const result = await purchasePlan(req.vendorId, planId.trim());
-    res.status(result.queued ? 202 : 201).json({ success: true, ...result });
+    const result = await createSubscriptionPayment(req.vendorId, planId.trim());
+    res.status(201).json({ success: true, ...result });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 });
 
-router.post("/add-on", isVendor, async (req, res) => {
+router.post("/confirm-payment", isVendor, async (req, res) => {
   try {
-    const { planId, startDate, endDate } = req.body;
+    const { transactionId } = req.body;
 
-    if (!planId || typeof planId !== "string" || planId.trim() === "") {
-      return res.status(400).json({ success: false, message: "planId is required." });
+    if (!transactionId) {
+      return res.status(400).json({ success: false, message: "transactionId is required." });
     }
 
-    const result = await addOnSubscription(req.vendorId, planId.trim(), startDate || new Date(), endDate || null);
-    res.status(201).json({ success: true, ...result });
+    const result = await confirmSubscriptionPayment(req.vendorId, transactionId);
+    res.status(200).json({ success: true, ...result });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
@@ -73,7 +73,7 @@ router.get("/all", isAdmin, async (req, res) => {
       expiringWithin15Days: subscriptions.filter((sub) =>
         sub.expirationWarning.expiresWithin15Days ||
         sub.graceExpirationWarning.expiresWithin15Days ||
-        sub.addOns.some((addOn) => addOn.expirationWarning.expiresWithin15Days)
+        sub.fullPayments.some((fullPayment) => fullPayment.expirationWarning.expiresWithin15Days)
       ).length,
     };
 
@@ -121,7 +121,7 @@ router.post("/admin/assign", isAdmin, async (req, res) => {
   }
 });
 
-router.post("/admin/add-on", isAdmin, async (req, res) => {
+router.post("/admin/full-payment", isAdmin, async (req, res) => {
   try {
     const { vendorId, planId, startDate, endDate } = req.body;
 
@@ -129,7 +129,7 @@ router.post("/admin/add-on", isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: "vendorId and planId are required." });
     }
 
-    const result = await addOnSubscriptionByAdmin({ vendorId, planId, startDate, endDate });
+    const result = await fullPaymentSubscriptionByAdmin({ vendorId, planId, startDate, endDate });
     res.status(201).json({ success: true, ...result });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });

@@ -76,7 +76,7 @@ const inactiveWarning = (endDate, now = new Date()) => ({
 const getDocumentId = (value) => value?._id || value;
 
 const isBasePlan = (plan) => !plan.planType || plan.planType === "base";
-const isAddOnPlan = (plan) => plan.planType === "addon";
+const isFullPaymentPlan = (plan) => plan.planType === "full payment";
 
 const getActivePlan = async (planId) => {
   const plan = await Plan.findOne({ _id: planId, is_active: true, deletedAt: null });
@@ -103,9 +103,9 @@ const syncSubscriptionStatus = async (sub) => {
     shouldDeactivateVenues = true;
   }
 
-  for (const addOn of sub.addOns || []) {
-    if (addOn.status === "active" && now > addOn.endDate) {
-      addOn.status = "expired";
+  for (const fullPayment of sub.fullPayments || []) {
+    if (fullPayment.status === "active" && now > fullPayment.endDate) {
+      fullPayment.status = "expired";
       changed = true;
     }
   }
@@ -176,14 +176,14 @@ export const buildSubscriptionData = async (sub, { includeQueue = true } = {}) =
   const now = new Date();
   const data = sub.toObject ? sub.toObject() : sub;
   const vendorId = getDocumentId(data.vendorId);
-  const addOns = (data.addOns || []).map((addOn) => ({
-    ...addOn,
-    expirationWarning: buildWarning(addOn.endDate, addOn.status, now),
+  const fullPayments = (data.fullPayments || []).map((fullPayment) => ({
+    ...fullPayment,
+    expirationWarning: buildWarning(fullPayment.endDate, fullPayment.status, now),
   }));
 
   return {
     ...data,
-    addOns,
+    fullPayments,
     expirationWarning: buildWarning(data.endDate, data.status, now),
     graceExpirationWarning:
       data.status === "grace"
@@ -207,105 +207,129 @@ export const getSubscription = async (vendorId) => {
   return buildSubscriptionData(sub);
 };
 
-export const purchasePlan = async (vendorId, planId) => {
+
+export const createSubscriptionPayment = async (vendorId, planId) => {
   const plan = await getActivePlan(planId);
-  if (!isBasePlan(plan)) {
-    throw createError(400, "Use the add-on subscription endpoint for add-on plans.");
+
+  const isFullPayment = isFullPaymentPlan(plan);
+  if (!isBasePlan(plan) && !isFullPayment) {
+    throw createError(400, "Invalid plan type.");
   }
 
-  const existingSub = await Subscription.findOne({ vendorId });
-  if (existingSub) {
-    await syncSubscriptionStatus(existingSub);
-  }
-
-  const hasActiveSub = existingSub && existingSub.status !== "expired";
-
-  if (!hasActiveSub) {
-    const sub = await activatePlan(vendorId, plan);
-    return {
-      message: "Plan activated immediately.",
-      subscription: await buildSubscriptionData(sub),
-      queued: false,
-    };
-  }
-
-  const lastQueueItem = await SubscriptionQueue.findOne(
-    { vendorId, isActivated: false },
-    null,
-    { sort: { position: -1 } }
-  );
-  const nextPosition = lastQueueItem ? lastQueueItem.position + 1 : 1;
-
-  const queueEntry = await SubscriptionQueue.create({
+  // Create pending payment history
+  const paymentRecord = await createPaymentHistory({
     vendorId,
-    planId: plan._id,
-    planSnapshot: buildPlanSnapshot(plan),
-    position: nextPosition,
-    isActivated: false,
-    purchasedAt: new Date(),
+    type: isBasePlan(plan) ? "subscription" : "full payment",
+    relatedId: plan._id, // temporarily use planId as relatedId until activated
+    amount: plan.price,
+    paymentStatus: "pending",
+    transactionId: `TXN-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+    description: `Pending payment for ${plan.name}`,
   });
 
   return {
-    message: "You already have an active subscription. Plan added to queue.",
-    queueEntry,
-    queued: true,
+    message: "Payment intent created successfully.",
+    transactionId: paymentRecord.transactionId,
+    amount: plan.price,
   };
 };
 
-export const addOnSubscription = async (vendorId, planId, startDate = new Date(), endDate = null) => {
+export const confirmSubscriptionPayment = async (vendorId, transactionId) => {
+  const PaymentHistory = require("../models/PaymentHistoryModel.js").default;
+  const paymentRecord = await PaymentHistory.findOne({ vendorId, transactionId, paymentStatus: "pending" });
+  if (!paymentRecord) {
+    throw createError(404, "Pending payment not found or already processed.");
+  }
+
+  const planId = paymentRecord.relatedId;
   const plan = await getActivePlan(planId);
-  if (!isAddOnPlan(plan)) {
-    throw createError(400, 'Only plans with planType "addon" can be added as add-ons.');
-  }
 
-  const sub = await Subscription.findOne({ vendorId }).populate(
-    "planId",
-    "name price duration_days features planType"
-  );
+  paymentRecord.paymentStatus = "success";
+  paymentRecord.paymentTimestamp = new Date();
+  await paymentRecord.save();
 
-  if (!sub) {
-    throw createError(404, "Vendor must have a base subscription before purchasing add-ons.");
-  }
+  if (isBasePlan(plan)) {
+    const existingSub = await Subscription.findOne({ vendorId });
+    if (existingSub) {
+      await syncSubscriptionStatus(existingSub);
+    }
+    const hasActiveSub = existingSub && existingSub.status !== "expired";
 
-  await syncSubscriptionStatus(sub);
-  if (sub.status === "expired") {
-    throw createError(400, "Cannot add add-ons to an expired subscription.");
-  }
+    if (!hasActiveSub) {
+      const sub = await activatePlan(vendorId, plan);
+      paymentRecord.relatedId = sub._id;
+      await paymentRecord.save();
+      return {
+        message: "Payment successful. Plan activated immediately.",
+        subscription: await buildSubscriptionData(sub),
+        queued: false,
+      };
+    }
 
-  const { startDate: sd, endDate: ed } = buildDates(startDate, plan.duration_days, endDate);
+    const lastQueueItem = await SubscriptionQueue.findOne(
+      { vendorId, isActivated: false },
+      null,
+      { sort: { position: -1 } }
+    );
+    const nextPosition = lastQueueItem ? lastQueueItem.position + 1 : 1;
 
-  sub.addOns.push({
-    planId: plan._id,
-    planSnapshot: buildPlanSnapshot(plan),
-    status: "active",
-    startDate: sd,
-    endDate: ed,
-    purchasedAt: new Date(),
-  });
-
-  await sub.save();
-  await sub.populate("planId", "name price duration_days features planType");
-
-  // Create payment history for add-on
-  const addedAddOn = sub.addOns[sub.addOns.length - 1];
-  try {
-    await createPaymentHistory({
+    const queueEntry = await SubscriptionQueue.create({
       vendorId,
-      type: "addon",
-      relatedId: addedAddOn._id,
-      amount: plan.price,
+      planId: plan._id,
+      planSnapshot: buildPlanSnapshot(plan),
+      position: nextPosition,
+      isActivated: false,
       paymentStatus: "success",
-      transactionId: `ADDON-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-      description: `Payment for ${plan.name} add-on`,
+      purchasedAt: new Date(),
     });
-  } catch (error) {
-    console.error("Failed to create payment history for add-on:", error.message);
-  }
 
-  return {
-    message: "Add-on subscription activated.",
-    subscription: await buildSubscriptionData(sub),
-  };
+    paymentRecord.relatedId = queueEntry._id;
+    await paymentRecord.save();
+
+    return {
+      message: "Payment successful. Plan added to queue.",
+      queueEntry,
+      queued: true,
+    };
+  } else {
+    // Full payment
+    const sub = await Subscription.findOne({ vendorId }).populate(
+      "planId",
+      "name price duration_days features planType"
+    );
+
+    if (!sub) {
+      throw createError(404, "Vendor must have a base subscription before purchasing full-payments.");
+    }
+
+    await syncSubscriptionStatus(sub);
+    if (sub.status === "expired") {
+      throw createError(400, "Cannot add full-payments to an expired subscription.");
+    }
+
+    const { startDate: sd, endDate: ed } = buildDates(new Date(), plan.duration_days, null);
+
+    sub.fullPayments.push({
+      planId: plan._id,
+      planSnapshot: buildPlanSnapshot(plan),
+      status: "active",
+      startDate: sd,
+      endDate: ed,
+      purchasedAt: new Date(),
+    });
+
+    await sub.save();
+    await sub.populate("planId", "name price duration_days features planType");
+
+    const addedFullPayment = sub.fullPayments[sub.fullPayments.length - 1];
+    paymentRecord.relatedId = addedFullPayment._id;
+    await paymentRecord.save();
+
+    return {
+      message: "Payment successful. Full payment activated.",
+      subscription: await buildSubscriptionData(sub),
+    };
+  }
 };
 
 export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate }) => {
@@ -327,13 +351,13 @@ export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, e
   };
 };
 
-export const addOnSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate }) => {
+export const fullPaymentSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate }) => {
   const vendor = await Vendor.findById(vendorId);
   if (!vendor) {
     throw createError(404, "Vendor not found.");
   }
 
-  return addOnSubscription(vendorId, planId, startDate || new Date(), endDate || null);
+  return fullPaymentSubscription(vendorId, planId, startDate || new Date(), endDate || null);
 };
 
 export const getAllSubscriptionsForAdmin = async ({ expiringSoonOnly = false } = {}) => {
@@ -350,7 +374,7 @@ export const getAllSubscriptionsForAdmin = async ({ expiringSoonOnly = false } =
     const hasWarning =
       data.expirationWarning.expiresWithin15Days ||
       data.graceExpirationWarning.expiresWithin15Days ||
-      data.addOns.some((addOn) => addOn.expirationWarning.expiresWithin15Days);
+      data.fullPayments.some((fullPayment) => fullPayment.expirationWarning.expiresWithin15Days);
 
     if (!expiringSoonOnly || hasWarning) {
       completeData.push(data);
@@ -404,16 +428,16 @@ export const handleExpiry = async () => {
     processed++;
   }
 
-  const subscriptionsWithExpiredAddOns = await Subscription.find({
-    "addOns.status": "active",
-    "addOns.endDate": { $lte: now },
+  const subscriptionsWithExpiredFullPayments = await Subscription.find({
+    "fullPayments.status": "active",
+    "fullPayments.endDate": { $lte: now },
   });
 
-  for (const sub of subscriptionsWithExpiredAddOns) {
+  for (const sub of subscriptionsWithExpiredFullPayments) {
     let changed = false;
-    for (const addOn of sub.addOns) {
-      if (addOn.status === "active" && addOn.endDate <= now) {
-        addOn.status = "expired";
+    for (const fullPayment of sub.fullPayments) {
+      if (fullPayment.status === "active" && fullPayment.endDate <= now) {
+        fullPayment.status = "expired";
         changed = true;
       }
     }

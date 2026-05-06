@@ -25,8 +25,8 @@ export const createPaymentHistory = async (payload) => {
     throw createError("userId must be a valid MongoDB ObjectId if provided");
   }
 
-  if (!["booking", "subscription", "addon"].includes(type)) {
-    throw createError("type must be one of: booking, subscription, addon");
+  if (!["booking", "subscription", "full payment"].includes(type)) {
+    throw createError("type must be one of: booking, subscription, full payment");
   }
 
   if (typeof amount !== "number" || amount < 0) {
@@ -70,7 +70,7 @@ export const getPaymentHistoryForVendor = async (vendorId, filters = {}) => {
   const query = { vendorId };
 
   if (filters.type) {
-    if (!["booking", "subscription", "addon"].includes(filters.type)) {
+    if (!["booking", "subscription", "full payment"].includes(filters.type)) {
       throw createError("Invalid type filter");
     }
     query.type = filters.type;
@@ -111,7 +111,7 @@ export const getAllPaymentHistory = async (filters = {}) => {
   }
 
   if (filters.type) {
-    if (!["booking", "subscription", "addon"].includes(filters.type)) {
+    if (!["booking", "subscription", "full payment"].includes(filters.type)) {
       throw createError("Invalid type filter");
     }
     query.type = filters.type;

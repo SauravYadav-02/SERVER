@@ -28,7 +28,7 @@ const planSchema = new mongoose.Schema(
 
     planType: {
       type: String,
-      enum: ["base", "addon"],
+      enum: ["base", "full payment"],
       default: "base",
     },
 

@@ -51,6 +51,12 @@ const subscriptionQueueSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "success", "failed"],
+      default: "pending",
+    },
   },
   { timestamps: true }
 );

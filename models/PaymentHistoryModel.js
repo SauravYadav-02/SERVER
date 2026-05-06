@@ -16,7 +16,7 @@ const paymentHistorySchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["booking", "subscription", "addon"],
+      enum: ["booking", "subscription", "full payment"],
       required: true,
     },
     relatedId: {
