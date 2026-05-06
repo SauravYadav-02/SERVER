@@ -4,6 +4,7 @@ import Plan from "../models/PlanModel.js";
 import { sendEmail } from "../utils/emailService.js";
 import Vendor from "../models/VendorModel.js";
 import Venue from "../models/VenueModel.js";
+import { createPaymentHistory } from "./paymentHistoryService.js";
 
 const GRACE_DAYS = 15;
 const EXPIRY_WARNING_DAYS = 15;
@@ -147,6 +148,21 @@ export const activatePlan = async (vendorId, plan, startDate = new Date(), endDa
 
   await Venue.updateMany({ vendorId }, { isSubscriptionActive: true });
 
+  // Create payment history for subscription
+  try {
+    await createPaymentHistory({
+      vendorId,
+      type: "subscription",
+      relatedId: subscription._id,
+      amount: plan.price,
+      paymentStatus: "success",
+      transactionId: `SUB-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+      description: `Payment for ${plan.name} subscription`,
+    });
+  } catch (error) {
+    console.error("Failed to create payment history for subscription:", error.message);
+  }
+
   return subscription;
 };
 
@@ -269,6 +285,22 @@ export const addOnSubscription = async (vendorId, planId, startDate = new Date()
 
   await sub.save();
   await sub.populate("planId", "name price duration_days features planType");
+
+  // Create payment history for add-on
+  const addedAddOn = sub.addOns[sub.addOns.length - 1];
+  try {
+    await createPaymentHistory({
+      vendorId,
+      type: "addon",
+      relatedId: addedAddOn._id,
+      amount: plan.price,
+      paymentStatus: "success",
+      transactionId: `ADDON-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+      description: `Payment for ${plan.name} add-on`,
+    });
+  } catch (error) {
+    console.error("Failed to create payment history for add-on:", error.message);
+  }
 
   return {
     message: "Add-on subscription activated.",

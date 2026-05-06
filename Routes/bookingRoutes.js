@@ -1,6 +1,6 @@
 import express from "express";
 import Booking from "../models/BookingModel.js";
-import Venue from "../models/VenueModel.js";
+import { createBookingWithUpfrontPayment } from "../services/mockPaymentService.js";
 
 const router = express.Router();
 
@@ -8,7 +8,7 @@ const router = express.Router();
 router.get("/venue/:venueId/booked-dates", async (req, res) => {
   try {
     const { venueId } = req.params;
-    const bookings = await Booking.find({ venueId, status: { $ne: "rejected" } });
+    const bookings = await Booking.find({ venueId, status: { $nin: ["rejected", "failed", "cancelled"] } });
     const bookedDates = bookings.map((b) => b.date);
     res.json({ bookedDates });
   } catch (error) {
@@ -19,32 +19,10 @@ router.get("/venue/:venueId/booked-dates", async (req, res) => {
 // Create a new booking
 router.post("/", async (req, res) => {
   try {
-    const { userId, vendorId, venueId, date, cost } = req.body;
-
-    // Check if the venue is already booked for this date
-    const existingBooking = await Booking.findOne({
-      venueId,
-      date,
-      status: { $ne: "rejected" },
-    });
-
-    if (existingBooking) {
-      return res.status(400).json({ error: "Venue is already booked on this date" });
-    }
-
-    const booking = new Booking({
-      userId,
-      vendorId,
-      venueId,
-      date,
-      cost,
-      status: "approved", // Bookings are approved by default
-    });
-
-    await booking.save();
+    const booking = await createBookingWithUpfrontPayment(req.body);
     res.status(201).json({ message: "Booking created successfully", booking });
   } catch (error) {
-    res.status(500).json({ error: "Failed to create booking" });
+    res.status(error.statusCode || 500).json({ error: error.message || "Failed to create booking" });
   }
 });
 

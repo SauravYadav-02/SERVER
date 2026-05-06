@@ -25,10 +25,38 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    totalBookingAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    upfrontPaymentAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    amountPaid: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "success", "failed"],
+      default: "pending",
+    },
+    transactionId: {
+      type: String,
+      default: null,
+    },
+    paymentTimestamp: {
+      type: Date,
+      default: null,
+    },
     status: {
       type: String,
-      enum: ["approved", "rejected"],
-      default: "approved",
+      enum: ["pending", "approved", "rejected", "success", "failed", "cancelled"],
+      default: "pending",
     },
   },
   { timestamps: true }

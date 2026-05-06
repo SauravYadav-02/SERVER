@@ -10,6 +10,8 @@ import bookingRoutes from "./Routes/bookingRoutes.js";
 import wishlistRoutes from "./Routes/wishlistRoutes.js";
 import planRoutes from "./Routes/planRoutes.js";
 import subscriptionRoutes from "./Routes/subscriptionRoutes.js";
+import mockPaymentRoutes from "./Routes/mockPaymentRoutes.js";
+import paymentHistoryRoutes from "./Routes/paymentHistoryRoutes.js";
 
 import { registerSubscriptionCronJobs } from "./jobs/subscriptionCron.js";
 
@@ -34,11 +36,13 @@ app.use("/admin", adminRoutes);
 app.use("/venues", venueRoutes);
 app.use("/bookings", bookingRoutes);
 app.use("/api/wishlist", wishlistRoutes);
+app.use("/", mockPaymentRoutes);
 
 // ── Subscription System ─────────────────────────────────────
 app.use("/plans", planRoutes);           // Admin CRUD + public GET
 app.use("/subscription", subscriptionRoutes); // Vendor purchase, view, queue
+app.use("/payments", paymentHistoryRoutes); // Payment history
 
 app.listen(3000, "0.0.0.0", () => {
   console.log("Server running on port 3000");
-});
+});
