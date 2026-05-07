@@ -139,6 +139,86 @@ router.post("/venue/:venueId", async (req, res) => {
   }
 });
 
+// GET all reviews for a vendor's venues with filtering, sorting, pagination and analytics
+router.get("/vendor/:vendorId", async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+    const { sort, venueId, page = 1, limit = 10 } = req.query;
+
+    const venues = await Venue.find({ vendorId }).select("_id name");
+    if (!venues || venues.length === 0) {
+      return res.json({ reviews: [], analytics: null, totalPages: 0, currentPage: 1 });
+    }
+
+    const venueIds = venues.map((v) => v._id);
+    const query = { venueId: { $in: venueIds } };
+
+    // Filter by specific venue if provided
+    if (venueId && venueId !== "all") {
+      query.venueId = venueId;
+    }
+
+    // Sorting
+    let sortOptions = { createdAt: -1 }; // Default: latest
+    if (sort === "highest") sortOptions = { rating: -1, createdAt: -1 };
+    if (sort === "lowest") sortOptions = { rating: 1, createdAt: -1 };
+
+    // Pagination
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Fetch paginated reviews
+    const reviews = await RatingFeedback.find(query)
+      .populate("userId", "name email profilePhoto")
+      .populate("venueId", "name")
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(Number(limit));
+
+    const totalReviewsCount = await RatingFeedback.countDocuments(query);
+
+    // Analytics: Calculate across ALL venues of this vendor (ignoring specific venue filter for overall vendor analytics)
+    const allVendorReviewsQuery = { venueId: { $in: venueIds } };
+    const analyticsData = await RatingFeedback.aggregate([
+      { $match: allVendorReviewsQuery },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: "$rating" },
+          totalReviews: { $sum: 1 },
+          ratings: { $push: "$rating" },
+        },
+      },
+    ]);
+
+    let analytics = {
+      averageRating: 0,
+      totalReviews: 0,
+      distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+    };
+
+    if (analyticsData.length > 0) {
+      const data = analyticsData[0];
+      analytics.averageRating = Number(data.averageRating.toFixed(1));
+      analytics.totalReviews = data.totalReviews;
+
+      data.ratings.forEach((r) => {
+        if (analytics.distribution[r] !== undefined) {
+          analytics.distribution[r]++;
+        }
+      });
+    }
+
+    res.json({
+      reviews,
+      analytics,
+      totalPages: Math.ceil(totalReviewsCount / Number(limit)),
+      currentPage: Number(page),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET all reviews (admin use)
 router.get("/", async (req, res) => {
   try {

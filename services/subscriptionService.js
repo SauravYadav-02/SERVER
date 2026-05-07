@@ -5,6 +5,7 @@ import { sendEmail } from "../utils/emailService.js";
 import Vendor from "../models/VendorModel.js";
 import Venue from "../models/VenueModel.js";
 import { createPaymentHistory } from "./paymentHistoryService.js";
+import PaymentHistory from "../models/PaymentHistoryModel.js";
 
 const GRACE_DAYS = 15;
 const EXPIRY_WARNING_DAYS = 15;
@@ -235,7 +236,6 @@ export const createSubscriptionPayment = async (vendorId, planId) => {
 };
 
 export const confirmSubscriptionPayment = async (vendorId, transactionId) => {
-  const PaymentHistory = require("../models/PaymentHistoryModel.js").default;
   const paymentRecord = await PaymentHistory.findOne({ vendorId, transactionId, paymentStatus: "pending" });
   if (!paymentRecord) {
     throw createError(404, "Pending payment not found or already processed.");
