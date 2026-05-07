@@ -31,43 +31,9 @@ const venueSchema = new mongoose.Schema(
     // ✅ store file paths
     mediaFiles: [String],
 
-    reviews: [
-      {
-        userId: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        rating: {
-          type: Number,
-          required: true,
-          min: 1,
-          max: 5,
-        },
-        feedback: {
-          type: String,
-          trim: true,
-          maxlength: 500,
-          default: "",
-        },
-        createdAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
 
-    averageRating: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5,
-    },
 
-    ratingCount: {
-      type: Number,
-      default: 0,
-    },
+
 
     // ✅ NEW FIELDS
 

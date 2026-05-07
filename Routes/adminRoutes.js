@@ -1,6 +1,7 @@
 import express from "express";
 import Admin from "../models/AdminModel.js";
 import Venue from "../models/VenueModel.js";
+import RatingFeedback from "../models/RatingFeedbackModel.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 
 const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
@@ -77,6 +78,45 @@ router.put("/venues/:id/status", isAdmin, async (req, res) => {
 
         res.json(buildVenueResponse(venue, req));
     } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Admin: Get all reviews across all venues
+router.get("/reviews", isAdmin, async (req, res) => {
+    try {
+        const reviews = await RatingFeedback.find()
+            .populate("userId", "name email")
+            .populate("venueId", "name");
+            
+        const allReviews = reviews.map(r => ({
+            ...r._doc,
+            venueId: r.venueId?._id,
+            venueName: r.venueId?.name
+        }));
+        
+        // Sort by newest first
+        allReviews.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+        res.json(allReviews);
+    } catch(err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Admin: Approve/Reject review
+router.patch("/reviews/:venueId/:reviewId/status", isAdmin, async (req, res) => {
+    try {
+        const { status } = req.body;
+        const review = await RatingFeedback.findByIdAndUpdate(
+            req.params.reviewId,
+            { status },
+            { new: true }
+        );
+        
+        if (!review) return res.status(404).json({ message: "Review not found" });
+
+        res.json({ message: "Review status updated", review });
+    } catch(err) {
         res.status(500).json({ message: err.message });
     }
 });

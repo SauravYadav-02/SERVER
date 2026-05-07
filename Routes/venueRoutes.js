@@ -32,10 +32,37 @@ const filterVisibleVenues = async (venues) => {
   });
 };
 
-const updateRatingSummary = (venue) => {
-  const totalRating = venue.reviews.reduce((sum, review) => sum + review.rating, 0);
-  venue.ratingCount = venue.reviews.length;
-  venue.averageRating = venue.ratingCount ? Number((totalRating / venue.ratingCount).toFixed(1)) : 0;
+import RatingFeedback from "../models/RatingFeedbackModel.js";
+
+// Helper to attach rating stats to an array of venues
+const attachRatingStats = async (venues) => {
+  if (venues.length === 0) return venues;
+
+  const venueIds = venues.map(v => v._id);
+  const stats = await RatingFeedback.aggregate([
+    { $match: { venueId: { $in: venueIds }, status: "approved" } },
+    {
+      $group: {
+        _id: "$venueId",
+        averageRating: { $avg: "$rating" },
+        ratingCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const statsMap = stats.reduce((acc, stat) => {
+    acc[stat._id.toString()] = {
+      averageRating: Number(stat.averageRating.toFixed(1)),
+      ratingCount: stat.ratingCount,
+    };
+    return acc;
+  }, {});
+
+  return venues.map(venue => {
+    const venueObj = venue.toObject ? venue.toObject() : venue;
+    const venueStats = statsMap[venue._id.toString()] || { averageRating: 0, ratingCount: 0 };
+    return { ...venueObj, ...venueStats };
+  });
 };
 
 // ✅ Create Venue (with images)
@@ -73,19 +100,20 @@ router.get("/", async (req, res) => {
   try {
     // Admin bypass: pass ?admin=true to see all venues regardless of subscription
     if (req.query.admin === "true") {
-      const venues = await Venue.find()
-        .populate("vendorId", "fullName email")
-        .populate("reviews.userId", "name email");
+      let venues = await Venue.find()
+        .populate("vendorId", "fullName email");
+      venues = await attachRatingStats(venues);
       return res.json(venues);
     }
 
     // Optimized query: filter directly in DB for better performance
-    const visibleVenues = await Venue.find({
+    let visibleVenues = await Venue.find({
       status: "approved",
       isSubscriptionActive: true
     })
-      .populate("vendorId", "fullName email")
-      .populate("reviews.userId", "name email profilePhoto");
+      .populate("vendorId", "fullName email");
+
+    visibleVenues = await attachRatingStats(visibleVenues);
 
     res.json(visibleVenues);
   } catch (err) {
@@ -130,7 +158,9 @@ router.get("/vendor/:vendorId", async (req, res) => {
       query.isSubscriptionActive = true;
     }
 
-    const venues = await Venue.find(query).populate("reviews.userId", "name email profilePhoto");
+    let venues = await Venue.find(query);
+    venues = await attachRatingStats(venues);
+
     res.json(venues);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -140,110 +170,25 @@ router.get("/vendor/:vendorId", async (req, res) => {
 
 
 
-// ✅ GET reviews for a venue (public — no subscription gate)
-router.get("/:id/reviews", async (req, res) => {
-  try {
-    const venue = await Venue.findById(req.params.id)
-      .select("reviews averageRating ratingCount")
-      .populate("reviews.userId", "name email profilePhoto");
 
-    if (!venue) {
-      return res.status(404).json({ message: "Venue not found" });
-    }
-
-    res.json({
-      reviews: venue.reviews,
-      averageRating: venue.averageRating,
-      ratingCount: venue.ratingCount,
-    });
-  } catch (err) {
-    if (err.name === "CastError") {
-      return res.status(400).json({ message: "Invalid venueId" });
-    }
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Add or update a venue rating and feedback
-router.post("/:id/review", async (req, res) => {
-  try {
-    const { userId, rating, feedback } = req.body;
-    const numericRating = Number(rating);
-    const feedbackText = typeof feedback === "string" ? feedback : "";
-
-    if (!userId) {
-      return res.status(400).json({ message: "userId is required" });
-    }
-
-    if (!numericRating || numericRating < 1 || numericRating > 5) {
-      return res.status(400).json({ message: "Rating must be between 1 and 5" });
-    }
-
-    if (feedbackText.length > 500) {
-      return res.status(400).json({ message: "Feedback cannot exceed 500 characters" });
-    }
-
-    const [venue, user] = await Promise.all([
-      Venue.findById(req.params.id),
-      User.findById(userId),
-    ]);
-
-    if (!venue) {
-      return res.status(404).json({ message: "Venue not found" });
-    }
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const existingReview = venue.reviews.find(
-      (review) => review.userId.toString() === userId
-    );
-
-    if (existingReview) {
-      existingReview.rating = numericRating;
-      existingReview.feedback = feedbackText;
-      existingReview.createdAt = new Date();
-    } else {
-      venue.reviews.push({
-        userId,
-        rating: numericRating,
-        feedback: feedbackText,
-      });
-    }
-
-    updateRatingSummary(venue);
-    await venue.save();
-    await venue.populate("reviews.userId", "name email profilePhoto");
-
-    res.json({
-      message: existingReview ? "Review updated successfully" : "Review added successfully",
-      averageRating: venue.averageRating,
-      ratingCount: venue.ratingCount,
-      reviews: venue.reviews,
-    });
-  } catch (err) {
-    if (err.name === "CastError") {
-      return res.status(400).json({ message: "Invalid venueId or userId" });
-    }
-
-    res.status(500).json({ error: err.message });
-  }
-});
 
 
 // ✅ 4. GET Single Venue (Full Details — subscription-gated)
 router.get("/:id", async (req, res) => {
   try {
-    const venue = await Venue.findById(req.params.id).populate("reviews.userId", "name email profilePhoto");
+    const venue = await Venue.findById(req.params.id);
 
     if (!venue) {
       return res.status(404).json({ message: "Venue not found" });
     }
 
+    // Attach stats dynamically
+    const venuesWithStats = await attachRatingStats([venue]);
+    const finalVenue = venuesWithStats[0];
+
     // Admin bypass
     if (req.query.admin === "true") {
-      return res.json(venue);
+      return res.json(finalVenue);
     }
 
     // Check vendor's subscription status
@@ -251,7 +196,6 @@ router.get("/:id", async (req, res) => {
 
     if (subStatus === "expired" || subStatus === "none") {
       // Allow access if the requesting user has a booking for this venue
-      // (pass ?userId=<id> to indicate a logged-in user with a possible booking)
       const requestingUserId = req.query.userId;
       if (requestingUserId) {
         const hasBooking = await Booking.findOne({
@@ -259,7 +203,7 @@ router.get("/:id", async (req, res) => {
           userId: requestingUserId,
         });
         if (hasBooking) {
-          return res.json(venue); // Booked venue always accessible
+          return res.json(finalVenue); // Booked venue always accessible
         }
       }
       return res.status(403).json({
@@ -267,7 +211,7 @@ router.get("/:id", async (req, res) => {
       });
     }
 
-    res.json(venue);
+    res.json(finalVenue);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

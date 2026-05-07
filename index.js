@@ -4,13 +4,14 @@ import cors from "cors";
 
 import userRoutes from "./Routes/userRoutes.js";
 import vendorRoutes from "./Routes/vendorRoutes.js";
-import adminRoutes  from "./Routes/adminRoutes.js";
-import venueRoutes from "./Routes/venueRoutes.js";
+import adminRoutes from "./Routes/adminRoutes.js";
+import venueRoutes from "./routes/venueRoutes.js";
+import ratingRoutes from "./routes/ratingRoutes.js";
 import bookingRoutes from "./Routes/bookingRoutes.js";
 import wishlistRoutes from "./Routes/wishlistRoutes.js";
 import planRoutes from "./Routes/planRoutes.js";
 import subscriptionRoutes from "./Routes/subscriptionRoutes.js";
-import mockPaymentRoutes from "./Routes/mockPaymentRoutes.js";
+import mockPaymentRoutes from "./routes/mockPaymentRoutes.js";
 import paymentHistoryRoutes from "./Routes/paymentHistoryRoutes.js";
 
 import { registerSubscriptionCronJobs } from "./jobs/subscriptionCron.js";
@@ -21,12 +22,12 @@ app.use(cors());
 app.use(express.json());
 
 mongoose.connect("mongodb://localhost:27017/Book_My_Venue")
-.then(() => {
-  console.log("DB Connected");
-  // Start background cron jobs only after DB is ready
-  registerSubscriptionCronJobs();
-})
-.catch(() => console.log("DB Error"));
+  .then(() => {
+    console.log("DB Connected");
+    // Start background cron jobs only after DB is ready
+    registerSubscriptionCronJobs();
+  })
+  .catch(() => console.log("DB Error"));
 
 app.use("/uploads", express.static("uploads"));
 
@@ -34,6 +35,7 @@ app.use("/users", userRoutes);
 app.use("/vendors", vendorRoutes);
 app.use("/admin", adminRoutes);
 app.use("/venues", venueRoutes);
+app.use("/ratings", ratingRoutes);
 app.use("/bookings", bookingRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/", mockPaymentRoutes);
