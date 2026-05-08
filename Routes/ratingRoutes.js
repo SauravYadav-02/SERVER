@@ -5,7 +5,7 @@ import User from "../models/UserModel.js";
 
 const router = express.Router();
 
-// Helper to calculate rating stats for a venue
+// Helper to calculate rating stats for a venue and sync with Venue model
 const getRatingStats = async (venueId) => {
   const result = await RatingFeedback.aggregate([
     { $match: { venueId: venueId, status: "approved" } },
@@ -18,13 +18,21 @@ const getRatingStats = async (venueId) => {
     },
   ]);
 
+  let stats = { averageRating: 0, ratingCount: 0 };
   if (result.length > 0) {
-    return {
+    stats = {
       averageRating: Number(result[0].averageRating.toFixed(1)),
       ratingCount: result[0].ratingCount,
     };
   }
-  return { averageRating: 0, ratingCount: 0 };
+
+  // Sync with Venue model
+  await Venue.findByIdAndUpdate(venueId, {
+    averageRating: stats.averageRating,
+    totalReviews: stats.ratingCount,
+  });
+
+  return stats;
 };
 
 // GET ratings for a venue (public)
@@ -208,9 +216,30 @@ router.get("/vendor/:vendorId", async (req, res) => {
       });
     }
 
+    // Per-venue statistics
+    const venueStatsData = await RatingFeedback.aggregate([
+      { $match: { venueId: { $in: venueIds } } },
+      {
+        $group: {
+          _id: "$venueId",
+          averageRating: { $avg: "$rating" },
+          totalReviews: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const venueStats = venueStatsData.reduce((acc, stat) => {
+      acc[stat._id.toString()] = {
+        averageRating: Number(stat.averageRating.toFixed(1)),
+        totalReviews: stat.totalReviews,
+      };
+      return acc;
+    }, {});
+
     res.json({
       reviews,
       analytics,
+      venueStats,
       totalPages: Math.ceil(totalReviewsCount / Number(limit)),
       currentPage: Number(page),
     });
@@ -245,6 +274,10 @@ router.patch("/:id/approve", async (req, res) => {
       { new: true }
     );
     if (!review) return res.status(404).json({ message: "Review not found" });
+
+    // Recalculate stats for the venue
+    await getRatingStats(review.venueId);
+
     res.json(review);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -260,6 +293,10 @@ router.patch("/:id/reject", async (req, res) => {
       { new: true }
     );
     if (!review) return res.status(404).json({ message: "Review not found" });
+
+    // Recalculate stats for the venue
+    await getRatingStats(review.venueId);
+
     res.json(review);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -271,6 +308,10 @@ router.delete("/:id", async (req, res) => {
   try {
     const review = await RatingFeedback.findByIdAndDelete(req.params.id);
     if (!review) return res.status(404).json({ message: "Review not found" });
+
+    // Recalculate stats for the venue
+    await getRatingStats(review.venueId);
+
     res.json({ message: "Review deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });

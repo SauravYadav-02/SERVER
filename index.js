@@ -5,13 +5,13 @@ import cors from "cors";
 import userRoutes from "./Routes/userRoutes.js";
 import vendorRoutes from "./Routes/vendorRoutes.js";
 import adminRoutes from "./Routes/adminRoutes.js";
-import venueRoutes from "./routes/venueRoutes.js";
-import ratingRoutes from "./routes/ratingRoutes.js";
+import venueRoutes from "./Routes/venueRoutes.js";
+import ratingRoutes from "./Routes/ratingRoutes.js";
 import bookingRoutes from "./Routes/bookingRoutes.js";
 import wishlistRoutes from "./Routes/wishlistRoutes.js";
 import planRoutes from "./Routes/planRoutes.js";
 import subscriptionRoutes from "./Routes/subscriptionRoutes.js";
-import mockPaymentRoutes from "./routes/mockPaymentRoutes.js";
+import mockPaymentRoutes from "./Routes/mockPaymentRoutes.js";
 import paymentHistoryRoutes from "./Routes/paymentHistoryRoutes.js";
 
 import { registerSubscriptionCronJobs } from "./jobs/subscriptionCron.js";
