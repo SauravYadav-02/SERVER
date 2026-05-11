@@ -62,7 +62,4 @@ const userSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Index for email to ensure uniqueness
-userSchema.index({ email: 1 });
-
 export default mongoose.model("User", userSchema);
