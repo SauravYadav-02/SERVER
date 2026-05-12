@@ -1,0 +1,143 @@
+### Subscription Plan Requests
+# Base URL: http://localhost:3000
+
+### Admin login (required before creating plans)
+POST http://localhost:3000/admin/login
+Content-Type: application/json
+
+{
+  "username": "admin_username",
+  "password": "admin_password"
+}
+
+# Use the returned admin `_id` as the `adminid` header for protected routes.
+# Example: adminid: 6432abcd1234ef567890
+
+# Create 1-month plan
+POST http://localhost:3000/plans
+Content-Type: application/json
+adminid: <ADMIN_ID>
+
+{
+  "name": "1 Month Plan",
+  "duration_days": 30,
+  "price": 100,
+  "planType": "base",
+  "is_active": true,
+  "features": [
+    "Access to all vendor listings",
+    "Priority customer support",
+    "Basic booking analytics"
+  ]
+}
+
+### Create 3-month plan
+POST http://localhost:3000/plans
+Content-Type: application/json
+adminid: <ADMIN_ID>
+
+{
+  "name": "3 Month Plan",
+  "duration_days": 90,
+  "price": 270,
+  "planType": "base",
+  "is_active": true,
+  "features": [
+    "Access to all vendor listings",
+    "Priority customer support",
+    "Booking analytics",
+    "Discounted venue management tools"
+  ]
+}
+
+### Create 6-month plan
+POST http://localhost:3000/plans
+Content-Type: application/json
+adminid: <ADMIN_ID>
+
+{
+  "name": "6 Month Plan",
+  "duration_days": 180,
+  "price": 500,
+  "planType": "base",
+  "is_active": true,
+  "features": [
+    "Access to all vendor listings",
+    "Priority customer support",
+    "Advanced booking analytics",
+    "Discounted venue management tools",
+    "Early access to promotions"
+  ]
+}
+
+### Get active plans
+GET http://localhost:3000/plans
+
+### Create add-on plan
+POST http://localhost:3000/plans
+Content-Type: application/json
+adminid: <ADMIN_ID>
+
+{
+  "name": "Featured Listing Add-on",
+  "duration_days": 15,
+  "price": 50,
+  "planType": "addon",
+  "is_active": true,
+  "features": [
+    "Featured placement",
+    "Homepage visibility boost"
+  ]
+}
+
+### Vendor purchases base subscription
+POST http://localhost:3000/subscription/purchase
+Content-Type: application/json
+vendorid: <VENDOR_ID>
+
+{
+  "planId": "<BASE_PLAN_ID>"
+}
+
+### Vendor purchases add-on subscription
+POST http://localhost:3000/subscription/add-on
+Content-Type: application/json
+vendorid: <VENDOR_ID>
+
+{
+  "planId": "<ADDON_PLAN_ID>",
+  "startDate": "2026-05-04",
+  "endDate": "2026-05-19"
+}
+
+### Admin assigns base subscription with explicit dates
+POST http://localhost:3000/subscription/admin/assign
+Content-Type: application/json
+adminid: <ADMIN_ID>
+
+{
+  "vendorId": "<VENDOR_ID>",
+  "planId": "<BASE_PLAN_ID>",
+  "startDate": "2026-05-04",
+  "endDate": "2026-06-03"
+}
+
+### Admin adds add-on to vendor subscription
+POST http://localhost:3000/subscription/admin/add-on
+Content-Type: application/json
+adminid: <ADMIN_ID>
+
+{
+  "vendorId": "<VENDOR_ID>",
+  "planId": "<ADDON_PLAN_ID>",
+  "startDate": "2026-05-04",
+  "endDate": "2026-05-19"
+}
+
+### Admin gets complete subscription data
+GET http://localhost:3000/subscription/all
+adminid: <ADMIN_ID>
+
+### Admin gets 15-day expiration warnings
+GET http://localhost:3000/subscription/expiring-soon
+adminid: <ADMIN_ID>
