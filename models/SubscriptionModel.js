@@ -75,6 +75,18 @@ const subscriptionSchema = new mongoose.Schema(
       default: [],
     },
 
+    // Extra descriptive fields for reporting/tracking
+    adminId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null,
+    },
+    adminName: { type: String, default: "" },
+    userName: { type: String, default: "" },
+    userEmail: { type: String, default: "" }, // Email ID
+    vendorName: { type: String, default: "" },
+    vendorEmail: { type: String, default: "" },
+
     // Notification flags prevent duplicate emails.
     notifiedExpiry15Days: { type: Boolean, default: false },
     notifiedExpiry5Days: { type: Boolean, default: false },

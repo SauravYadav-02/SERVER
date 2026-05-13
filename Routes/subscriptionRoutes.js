@@ -114,7 +114,7 @@ router.post("/admin/assign", isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: "vendorId and planId are required." });
     }
 
-    const result = await assignSubscriptionByAdmin({ vendorId, planId, startDate, endDate });
+    const result = await assignSubscriptionByAdmin({ vendorId, planId, startDate, endDate, adminId: req.adminId });
     res.status(201).json({ success: true, ...result });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });
@@ -129,7 +129,7 @@ router.post("/admin/full-payment", isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: "vendorId and planId are required." });
     }
 
-    const result = await fullPaymentSubscriptionByAdmin({ vendorId, planId, startDate, endDate });
+    const result = await fullPaymentSubscriptionByAdmin({ vendorId, planId, startDate, endDate, adminId: req.adminId });
     res.status(201).json({ success: true, ...result });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });

@@ -4,6 +4,7 @@ import Plan from "../models/PlanModel.js";
 import { sendEmail } from "../utils/emailService.js";
 import Vendor from "../models/VendorModel.js";
 import Venue from "../models/VenueModel.js";
+import Admin from "../models/AdminModel.js";
 import { createPaymentHistory } from "./paymentHistoryService.js";
 import PaymentHistory from "../models/PaymentHistoryModel.js";
 
@@ -122,12 +123,21 @@ const syncSubscriptionStatus = async (sub) => {
   return sub;
 };
 
-export const activatePlan = async (vendorId, plan, startDate = new Date(), endDate = null) => {
+export const activatePlan = async (vendorId, plan, startDate = new Date(), endDate = null, adminId = null) => {
   const { startDate: sd, endDate: ed, graceEndDate: ged } = buildDates(
     startDate,
     plan.duration_days,
     endDate
   );
+
+  const [vendor, admin] = await Promise.all([
+    Vendor.findById(vendorId).select("fullName email"),
+    adminId ? Admin.findById(adminId).select("username") : null,
+  ]);
+
+  if (!vendor) {
+    throw createError(404, "Vendor not found.");
+  }
 
   const subscription = await Subscription.findOneAndUpdate(
     { vendorId },
@@ -139,6 +149,12 @@ export const activatePlan = async (vendorId, plan, startDate = new Date(), endDa
       startDate: sd,
       endDate: ed,
       graceEndDate: ged,
+      adminId: adminId || null,
+      adminName: admin?.username || "",
+      vendorName: vendor.fullName || "",
+      vendorEmail: vendor.email || "",
+      userName: vendor.fullName || "", // Assuming user name is vendor name for subscription
+      userEmail: vendor.email || "",
       notifiedExpiry15Days: false,
       notifiedExpiry5Days: false,
       notifiedExpiryDay: false,
@@ -153,6 +169,7 @@ export const activatePlan = async (vendorId, plan, startDate = new Date(), endDa
   try {
     await createPaymentHistory({
       vendorId,
+      adminId,
       type: "subscription",
       relatedId: subscription._id,
       amount: plan.price,
@@ -293,46 +310,87 @@ export const confirmSubscriptionPayment = async (vendorId, transactionId) => {
     };
   } else {
     // Full payment
-    const sub = await Subscription.findOne({ vendorId }).populate(
-      "planId",
-      "name price duration_days features planType"
-    );
-
-    if (!sub) {
-      throw createError(404, "Vendor must have a base subscription before purchasing full-payments.");
-    }
-
-    await syncSubscriptionStatus(sub);
-    if (sub.status === "expired") {
-      throw createError(400, "Cannot add full-payments to an expired subscription.");
-    }
-
-    const { startDate: sd, endDate: ed } = buildDates(new Date(), plan.duration_days, null);
-
-    sub.fullPayments.push({
-      planId: plan._id,
-      planSnapshot: buildPlanSnapshot(plan),
-      status: "active",
-      startDate: sd,
-      endDate: ed,
-      purchasedAt: new Date(),
-    });
-
-    await sub.save();
-    await sub.populate("planId", "name price duration_days features planType");
-
-    const addedFullPayment = sub.fullPayments[sub.fullPayments.length - 1];
-    paymentRecord.relatedId = addedFullPayment._id;
-    await paymentRecord.save();
-
-    return {
-      message: "Payment successful. Full payment activated.",
-      subscription: await buildSubscriptionData(sub),
-    };
+    return fullPaymentSubscription({ vendorId, plan, paymentRecord });
   }
 };
 
-export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate }) => {
+export const fullPaymentSubscription = async ({ vendorId, plan, startDate = new Date(), endDate = null, paymentRecord = null, adminId = null }) => {
+  const sub = await Subscription.findOne({ vendorId }).populate(
+    "planId",
+    "name price duration_days features planType"
+  );
+
+  if (!sub) {
+    throw createError(404, "Vendor must have a base subscription before purchasing full-payments.");
+  }
+
+  await syncSubscriptionStatus(sub);
+  if (sub.status === "expired") {
+    throw createError(400, "Cannot add full-payments to an expired subscription.");
+  }
+
+  const { startDate: sd, endDate: ed } = buildDates(startDate, plan.duration_days, endDate);
+
+  const [vendor, admin] = await Promise.all([
+    Vendor.findById(vendorId).select("fullName email"),
+    adminId ? Admin.findById(adminId).select("username") : null,
+  ]);
+
+  if (!vendor) {
+    throw createError(404, "Vendor not found.");
+  }
+
+  // Update top-level subscription fields too if needed, 
+  // or just ensure they are set if it's a full payment.
+  sub.adminId = adminId || sub.adminId || null;
+  sub.adminName = admin?.username || sub.adminName || "";
+  sub.vendorName = vendor.fullName || sub.vendorName || "";
+  sub.vendorEmail = vendor.email || sub.vendorEmail || "";
+  sub.userName = vendor.fullName || sub.userName || "";
+  sub.userEmail = vendor.email || sub.userEmail || "";
+
+  sub.fullPayments.push({
+    planId: plan._id,
+    planSnapshot: buildPlanSnapshot(plan),
+    status: "active",
+    startDate: sd,
+    endDate: ed,
+    purchasedAt: new Date(),
+  });
+
+  await sub.save();
+  await sub.populate("planId", "name price duration_days features planType");
+
+  const addedFullPayment = sub.fullPayments[sub.fullPayments.length - 1];
+
+  if (paymentRecord) {
+    paymentRecord.relatedId = addedFullPayment._id;
+    await paymentRecord.save();
+  } else {
+    // Create new payment history if not coming from confirmSubscriptionPayment
+    try {
+      await createPaymentHistory({
+        vendorId,
+        adminId,
+        type: "full payment",
+        relatedId: addedFullPayment._id,
+        amount: plan.price,
+        paymentStatus: "success",
+        transactionId: `FP-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+        description: `Full payment subscription for ${plan.name}`,
+      });
+    } catch (error) {
+      console.error("Failed to create payment history for full payment:", error.message);
+    }
+  }
+
+  return {
+    message: "Full payment activated successfully.",
+    subscription: await buildSubscriptionData(sub),
+  };
+};
+
+export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate, adminId }) => {
   const vendor = await Vendor.findById(vendorId);
   if (!vendor) {
     throw createError(404, "Vendor not found.");
@@ -343,7 +401,7 @@ export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, e
     throw createError(400, "Admin assignment requires a base subscription plan.");
   }
 
-  const sub = await activatePlan(vendorId, plan, startDate || new Date(), endDate || null);
+  const sub = await activatePlan(vendorId, plan, startDate || new Date(), endDate || null, adminId);
 
   return {
     message: "Subscription assigned successfully.",
@@ -351,13 +409,18 @@ export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, e
   };
 };
 
-export const fullPaymentSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate }) => {
+export const fullPaymentSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate, adminId }) => {
   const vendor = await Vendor.findById(vendorId);
   if (!vendor) {
     throw createError(404, "Vendor not found.");
   }
 
-  return fullPaymentSubscription(vendorId, planId, startDate || new Date(), endDate || null);
+  const plan = await getActivePlan(planId);
+  if (!isFullPaymentPlan(plan)) {
+    throw createError(400, "Plan must be a full-payment plan.");
+  }
+
+  return fullPaymentSubscription({ vendorId, plan, startDate: startDate || new Date(), endDate: endDate || null, adminId });
 };
 
 export const getAllSubscriptionsForAdmin = async ({ expiringSoonOnly = false } = {}) => {
