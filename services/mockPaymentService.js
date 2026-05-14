@@ -87,7 +87,7 @@ export const createBookingWithUpfrontPayment = async (payload) => {
   const [user, vendor, venue] = await Promise.all([
     User.findById(userId).select("_id"),
     Vendor.findById(vendorId).select("_id"),
-    Venue.findById(venueId).select("_id vendorId"),
+    Venue.findById(venueId).select("_id vendorId availableFrom"),
   ]);
 
   if (!user) {
@@ -104,6 +104,18 @@ export const createBookingWithUpfrontPayment = async (payload) => {
 
   if (venue.vendorId.toString() !== vendorId) {
     throw createError("venueId does not belong to the supplied vendorId");
+  }
+
+  if (venue.availableFrom) {
+    const parsedBookingDate = new Date(bookingDate);
+    const parsedAvailableFrom = new Date(venue.availableFrom);
+    
+    parsedBookingDate.setUTCHours(0, 0, 0, 0);
+    parsedAvailableFrom.setUTCHours(0, 0, 0, 0);
+
+    if (parsedBookingDate < parsedAvailableFrom) {
+      throw createError("Venue is not open for that date.", 400);
+    }
   }
 
   const existingBooking = await Booking.findOne({

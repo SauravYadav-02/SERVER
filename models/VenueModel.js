@@ -15,11 +15,7 @@ const venueSchema = new mongoose.Schema(
 
     pricePerDay: Number,
 
-    // ✅ Per-plate catering cost
-    perPlateCost: {
-      type: Number,
-      default: null,
-    },
+    // ✅ Per-plate catering cost (veg / non-veg only)
     vegPrice: {
       type: Number,
       default: null,
