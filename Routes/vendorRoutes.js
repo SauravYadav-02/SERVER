@@ -4,31 +4,48 @@ import { sendEmail } from "../utils/emailService.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 import upload from "../middleare/upload.js";
 
+import { paginate } from "../utils/pagination.js";
+
 const router = express.Router();
 
 // ============================
 // 🔹 Generate Vendor ID
 // ============================
 
-
 // ============================
-// 🔹 Get All Vendors (with file URLs)
+// 🔹 Get All Vendors (Admin - Paginated)
 // ============================
-router.get("/", async (req, res) => {
+router.get("/", isAdmin, async (req, res) => {
     try {
-        const vendors = await Vendor.find();
+        const { page, limit, search, status } = req.query;
 
-        const updatedVendors = vendors.map(vendor => ({
-            ...vendor._doc,
+        const query = {};
+        if (status) query.status = status;
+        if (search) {
+            query.$or = [
+                { fullName: { $regex: search, $options: "i" } },
+                { businessName: { $regex: search, $options: "i" } },
+                { email: { $regex: search, $options: "i" } },
+            ];
+        }
+
+        const paginationResult = await paginate(Vendor, query, {
+            page,
+            limit,
+            sort: { createdAt: -1 }
+        });
+
+        paginationResult.data = paginationResult.data.map(vendor => ({
+            ...vendor,
             governmentId: vendor.governmentId
-                ? `${req.protocol}://${req.get("host")}/${vendor.governmentId}`
+                ? `${req.protocol}://${req.get("host")}/${vendor.governmentId.replace(/\\/g, "/")}`
                 : null,
             licenseDoc: vendor.licenseDoc
-                ? `${req.protocol}://${req.get("host")}/${vendor.licenseDoc}`
+                ? `${req.protocol}://${req.get("host")}/${vendor.licenseDoc.replace(/\\/g, "/")}`
                 : null
         }));
 
-        res.json(updatedVendors);
+        res.json(paginationResult);
 
     } catch (err) {
         console.log(err);

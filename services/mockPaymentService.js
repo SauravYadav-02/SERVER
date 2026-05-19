@@ -4,6 +4,8 @@ import User from "../models/UserModel.js";
 import Vendor from "../models/VendorModel.js";
 import Venue from "../models/VenueModel.js";
 import { createPaymentHistory } from "./paymentHistoryService.js";
+import UserVendorPayment from "../models/UserVendorPaymentModel.js";
+import { getVendorSubscriptionStatus } from "./subscriptionService.js";
 
 const VALID_PAYMENT_OUTCOMES = ["success", "failure", "failed"];
 
@@ -81,13 +83,19 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     throw createError("date must be a valid date in YYYY-MM-DD format");
   }
 
+  // ✅ NEW: SECURE SUBSCRIPTION VALIDATION (Requirement)
+  const subStatus = await getVendorSubscriptionStatus(vendorId);
+  if (subStatus === "expired" || subStatus === "none") {
+    throw createError("Venue is not available for booking yet.", 403);
+  }
+
   const totalBookingAmount = normalizeTotalAmount(payload);
   const upfrontPaymentAmount = calculateUpfrontPayment(totalBookingAmount);
 
   const [user, vendor, venue] = await Promise.all([
     User.findById(userId).select("_id"),
     Vendor.findById(vendorId).select("_id"),
-    Venue.findById(venueId).select("_id vendorId"),
+    Venue.findById(venueId).select("_id vendorId isSubscriptionActive"),
   ]);
 
   if (!user) {
@@ -104,6 +112,11 @@ export const createBookingWithUpfrontPayment = async (payload) => {
 
   if (venue.vendorId.toString() !== vendorId) {
     throw createError("venueId does not belong to the supplied vendorId");
+  }
+
+  // Also check the flag on the venue itself (cached status)
+  if (!venue.isSubscriptionActive) {
+    throw createError("Venue is not available for booking yet.", 403);
   }
 
   const existingBooking = await Booking.findOne({
@@ -167,21 +180,23 @@ export const simulatePayment = async ({ bookingId, outcome, status, paymentStatu
 
   await booking.save();
 
-  // Create payment history entry
+  // Create transaction record
   try {
-    await createPaymentHistory({
-      vendorId: booking.vendorId,
+    // New UserVendorPayment (Specific as requested)
+    await UserVendorPayment.create({
+      bookingId: booking._id,
       userId: booking.userId,
-      type: "booking",
-      relatedId: booking._id,
+      vendorId: booking.vendorId,
+      venueId: booking.venueId,
       amount: upfrontPaymentAmount,
       paymentStatus: simulatedPaymentStatus,
       transactionId,
-      description: `Upfront payment for booking on ${booking.date}`,
+      description: `Transaction between User and Vendor for booking on ${booking.date}`,
     });
+
   } catch (error) {
-    console.error("Failed to create payment history:", error.message);
-    // Don't fail the payment if history creation fails
+    console.error("Failed to create transaction records:", error.message);
+    // Don't fail the payment if transaction creation fails
   }
 
   return booking;
@@ -227,4 +242,30 @@ export const getVendorBookings = async (vendorId) => {
       bookingStatus: booking.status,
     };
   });
+};
+
+export const getUserPayments = async (userId) => {
+  if (!userId || !isValidObjectId(userId)) {
+    throw createError("A valid userId is required");
+  }
+
+  const payments = await UserVendorPayment.find({ userId })
+    .populate("vendorId", "name businessName")
+    .populate("venueId", "name")
+    .sort({ createdAt: -1 });
+
+  return payments;
+};
+
+export const getVendorPayments = async (vendorId) => {
+  if (!vendorId || !isValidObjectId(vendorId)) {
+    throw createError("A valid vendorId is required");
+  }
+
+  const payments = await UserVendorPayment.find({ vendorId })
+    .populate("userId", "name email profilePhoto")
+    .populate("venueId", "name")
+    .sort({ createdAt: -1 });
+
+  return payments;
 };

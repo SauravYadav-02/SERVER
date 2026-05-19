@@ -5,7 +5,8 @@ import User from "../models/UserModel.js";
 import Booking from "../models/BookingModel.js";
 import venueUpload from "../middleare/venueUpload.js";
 import fs from "fs/promises";
-import { getVendorSubscriptionStatus } from "../services/subscriptionService.js";
+import { getVendorSubscriptionStatus, handleExpiry } from "../services/subscriptionService.js";
+import { paginate } from "../utils/pagination.js";
 
 const router = express.Router();
 
@@ -23,7 +24,7 @@ const filterVisibleVenues = async (venues) => {
     if (venue.status === "rejected") return false;
 
     // 2. MUST have an active subscription (or be in grace period)
-    if (!venue.isSubscriptionActive) return false;
+    // if (!venue.isSubscriptionActive) return false;
 
     // 3. Show if admin-approved, OR if it's pending (since sub is active)
     //    Actually, usually users only see approved venues. 
@@ -81,8 +82,41 @@ router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
     const imagePaths = req.files?.map((file) => file.path);
     const { reviews, averageRating, ratingCount, ...venueData } = req.body;
 
+    let venueTypes = [];
+    if (venueData.venueTypes) {
+      try {
+        venueTypes = JSON.parse(venueData.venueTypes);
+      } catch {
+        venueTypes = typeof venueData.venueTypes === 'string' ? venueData.venueTypes.split(',').map(s => s.trim()) : venueData.venueTypes;
+      }
+    }
+
+    let eventsSupported = [];
+    if (venueData.eventsSupported) {
+      try {
+        eventsSupported = JSON.parse(venueData.eventsSupported);
+      } catch {
+        eventsSupported = typeof venueData.eventsSupported === 'string' ? venueData.eventsSupported.split(',').map(s => s.trim()) : venueData.eventsSupported;
+      }
+    }
+
+    let amenities = [];
+    if (venueData.amenities) {
+      try {
+        amenities = JSON.parse(venueData.amenities);
+      } catch {
+        amenities = typeof venueData.amenities === 'string' ? venueData.amenities.split(',').map(s => s.trim()) : venueData.amenities;
+      }
+    }
+
+    const firstType = Array.isArray(venueTypes) && venueTypes.length > 0 ? venueTypes[0] : (venueData.type || "");
+
     const venue = new Venue({
       ...venueData,
+      type: firstType,
+      venueTypes: Array.isArray(venueTypes) ? venueTypes : [],
+      eventsSupported: Array.isArray(eventsSupported) ? eventsSupported : [],
+      amenities: Array.isArray(amenities) ? amenities : [],
       mediaFiles: imagePaths,
     });
 
@@ -90,6 +124,140 @@ router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
 
     res.status(201).json(venue);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// ✅ GET /venues/discover — Paginated, searchable, filterable
+//    Query params:
+//      page, limit, search, city, category,
+//      minPrice, maxPrice, capacity, sort
+// ─────────────────────────────────────────────────────────────
+router.get("/discover", async (req, res) => {
+  try {
+    // ── Parse & validate query params ─────────────────────────
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 9));
+    const skip  = (page - 1) * limit;
+
+    const { search, city, category, minPrice, maxPrice, capacity, sort, amenities } = req.query;
+
+    // ── Build Mongoose filter object ──────────────────────────
+    // Start with the required base conditions
+    const andConditions = [
+      { status: "approved" },
+      // { isSubscriptionActive: true },
+    ];
+
+    // Full-text search: regex across name, description, city, type, venueTypes, eventsSupported
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), "i");
+      andConditions.push({
+        $or: [
+          { name:            regex },
+          { description:     regex },
+          { city:            regex },
+          { type:            regex },
+          { venueTypes:      regex },
+          { eventsSupported: regex },
+        ],
+      });
+    }
+
+    // City filter (case-insensitive partial match)
+    if (city && city.trim()) {
+      andConditions.push({ city: new RegExp(city.trim(), "i") });
+    }
+
+    // Venue type/category filter (checks both type and venueTypes array)
+    if (category && category.trim() && category.trim().toLowerCase() !== "all") {
+      const categoriesArray = category.split(',').map(c => new RegExp(c.trim(), "i"));
+      if (categoriesArray.length > 0) {
+        andConditions.push({
+          $or: [
+            { type: { $in: categoriesArray } },
+            { venueTypes: { $in: categoriesArray } }
+          ]
+        });
+      }
+    }
+
+    // Events Supported filter
+    const { events } = req.query;
+    if (events && events.trim()) {
+      const eventsArray = events.split(',').map(e => new RegExp(e.trim(), "i"));
+      if (eventsArray.length > 0) {
+        andConditions.push({ eventsSupported: { $in: eventsArray } });
+      }
+    }
+
+    // Amenities filter
+    if (amenities) {
+      const amenitiesArray = amenities.split(',').map(a => new RegExp(a.trim(), "i"));
+      if (amenitiesArray.length > 0) {
+        andConditions.push({ amenities: { $all: amenitiesArray } });
+      }
+    }
+
+    // Price range filter
+    if (minPrice || maxPrice) {
+      const priceFilter = {};
+      if (minPrice && !isNaN(Number(minPrice))) priceFilter.$gte = Number(minPrice);
+      if (maxPrice && !isNaN(Number(maxPrice))) priceFilter.$lte = Number(maxPrice);
+      if (Object.keys(priceFilter).length > 0) {
+        andConditions.push({ pricePerDay: priceFilter });
+      }
+    }
+
+    // Minimum capacity filter
+    if (capacity && !isNaN(Number(capacity)) && Number(capacity) > 0) {
+      andConditions.push({ capacity: { $gte: Number(capacity) } });
+    }
+
+    // Combine all conditions with $and
+    const filter = { $and: andConditions };
+
+    // ── Build sort object ─────────────────────────────────────
+    let sortObj = {};
+    switch (sort) {
+      case "price_low":     sortObj = { pricePerDay: 1 };                          break;
+      case "price_high":    sortObj = { pricePerDay: -1 };                         break;
+      case "rating_high":   sortObj = { averageRating: -1, totalReviews: -1 };     break;
+      case "capacity_high": sortObj = { capacity: -1 };                            break;
+      case "oldest":        sortObj = { createdAt: 1 };                            break;
+      default:              sortObj = { createdAt: -1 };   // newest
+    }
+
+    // ── Execute count + paginated query in parallel ───────────
+    const [totalItems, rawVenues] = await Promise.all([
+      Venue.countDocuments(filter),
+      Venue.find(filter)
+        .sort(sortObj)
+        .skip(skip)
+        .limit(limit)
+        .populate("vendorId", "fullName email")
+        .lean(),
+    ]);
+
+    // ── Attach live rating stats ──────────────────────────────
+    const venues = await attachRatingStats(rawVenues);
+
+    // ── Pagination metadata ───────────────────────────────────
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const pagination = {
+      totalItems,
+      totalPages,
+      currentPage: page,
+      pageSize:    limit,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    };
+
+    res.json({ venues, pagination });
+  } catch (err) {
+    console.error("[/discover] Error:", err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
@@ -109,7 +277,7 @@ router.get("/", async (req, res) => {
     // Optimized query: filter directly in DB for better performance
     let visibleVenues = await Venue.find({
       status: "approved",
-      isSubscriptionActive: true
+      // isSubscriptionActive: true
     })
       .populate("vendorId", "fullName email");
 
@@ -144,9 +312,10 @@ router.get("/", async (req, res) => {
 
 
 
-// ✅ 3. GET Venues by Vendor (filtered for public view)
+// ✅ 3. GET Venues by Vendor (filtered for public/admin view - Paginated)
 router.get("/vendor/:vendorId", async (req, res) => {
   try {
+    const { page, limit, status } = req.query;
     const query = { vendorId: req.params.vendorId };
 
     // Admin/Owner bypass: if requesting user is the vendor themselves or an admin, show all
@@ -155,13 +324,19 @@ router.get("/vendor/:vendorId", async (req, res) => {
 
     if (!isOwner && !isAdmin) {
       query.status = "approved";
-      query.isSubscriptionActive = true;
+    } else if (status) {
+      query.status = status;
     }
 
-    let venues = await Venue.find(query);
-    venues = await attachRatingStats(venues);
+    const paginationResult = await paginate(Venue, query, {
+      page,
+      limit,
+      sort: { createdAt: -1 }
+    });
 
-    res.json(venues);
+    paginationResult.data = await attachRatingStats(paginationResult.data);
+
+    res.json(paginationResult);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -207,7 +382,7 @@ router.get("/:id", async (req, res) => {
         }
       }
       return res.status(403).json({
-        message: "This venue is currently unavailable (vendor subscription expired).",
+        message: "Venue is not available for booking yet.",
       });
     }
 
@@ -278,6 +453,39 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
     delete updateData.reviews;
     delete updateData.averageRating;
     delete updateData.ratingCount;
+
+    let venueTypes = [];
+    if (updateData.venueTypes) {
+      try {
+        venueTypes = JSON.parse(updateData.venueTypes);
+      } catch {
+        venueTypes = typeof updateData.venueTypes === 'string' ? updateData.venueTypes.split(',').map(s => s.trim()) : updateData.venueTypes;
+      }
+      updateData.venueTypes = Array.isArray(venueTypes) ? venueTypes : [];
+      if (updateData.venueTypes.length > 0) {
+        updateData.type = updateData.venueTypes[0];
+      }
+    }
+
+    let eventsSupported = [];
+    if (updateData.eventsSupported) {
+      try {
+        eventsSupported = JSON.parse(updateData.eventsSupported);
+      } catch {
+        eventsSupported = typeof updateData.eventsSupported === 'string' ? updateData.eventsSupported.split(',').map(s => s.trim()) : updateData.eventsSupported;
+      }
+      updateData.eventsSupported = Array.isArray(eventsSupported) ? eventsSupported : [];
+    }
+
+    let amenities = [];
+    if (updateData.amenities) {
+      try {
+        amenities = JSON.parse(updateData.amenities);
+      } catch {
+        amenities = typeof updateData.amenities === 'string' ? updateData.amenities.split(',').map(s => s.trim()) : updateData.amenities;
+      }
+      updateData.amenities = Array.isArray(amenities) ? amenities : [];
+    }
 
     // If the admin is not explicitly providing a status, reset it to pending (indicates vendor edit)
     if (!req.body.status) {
@@ -366,6 +574,16 @@ router.patch("/:id/reject", async (req, res) => {
     );
     if (!venue) return res.status(404).json({ message: "Venue not found" });
     res.json(venue);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ 9. POST Sync All Visibility (Manual refresh of isSubscriptionActive flags)
+router.post("/sync-all-visibility", async (req, res) => {
+  try {
+    const result = await handleExpiry();
+    res.json({ message: "Visibility synchronized successfully", ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
