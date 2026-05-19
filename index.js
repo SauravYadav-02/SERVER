@@ -1,6 +1,11 @@
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import userRoutes from "./Routes/userRoutes.js";
 import vendorRoutes from "./Routes/vendorRoutes.js";
@@ -29,7 +34,7 @@ mongoose.connect("mongodb://localhost:27017/Book_My_Venue")
   })
   .catch(() => console.log("DB Error"));
 
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/users", userRoutes);
 app.use("/vendors", vendorRoutes);

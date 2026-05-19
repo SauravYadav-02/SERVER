@@ -11,7 +11,7 @@ const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
 const buildUserResponse = (user, req) => {
     const response = user.toObject ? user.toObject() : user;
 
-    if (response.profilePhoto) {
+    if (response.profilePhoto && !response.profilePhoto.startsWith("http")) {
         response.profilePhoto = `${req.protocol}://${req.get("host")}/${fixPath(response.profilePhoto)}`;
     }
 

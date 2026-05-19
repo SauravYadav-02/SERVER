@@ -95,7 +95,11 @@ export const createBookingWithUpfrontPayment = async (payload) => {
   const [user, vendor, venue] = await Promise.all([
     User.findById(userId).select("_id"),
     Vendor.findById(vendorId).select("_id"),
+<<<<<<< HEAD
     Venue.findById(venueId).select("_id vendorId isSubscriptionActive"),
+=======
+    Venue.findById(venueId).select("_id vendorId availableFrom"),
+>>>>>>> 40c8d7bb903d79d30f815186249dcb033d2a1109
   ]);
 
   if (!user) {
@@ -114,9 +118,22 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     throw createError("venueId does not belong to the supplied vendorId");
   }
 
+<<<<<<< HEAD
   // Also check the flag on the venue itself (cached status)
   if (!venue.isSubscriptionActive) {
     throw createError("Venue is not available for booking yet.", 403);
+=======
+  if (venue.availableFrom) {
+    const parsedBookingDate = new Date(bookingDate);
+    const parsedAvailableFrom = new Date(venue.availableFrom);
+    
+    parsedBookingDate.setUTCHours(0, 0, 0, 0);
+    parsedAvailableFrom.setUTCHours(0, 0, 0, 0);
+
+    if (parsedBookingDate < parsedAvailableFrom) {
+      throw createError("Venue is not open for that date.", 400);
+    }
+>>>>>>> 40c8d7bb903d79d30f815186249dcb033d2a1109
   }
 
   const existingBooking = await Booking.findOne({
