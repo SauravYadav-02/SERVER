@@ -66,9 +66,15 @@ export const generateMockTransactionId = () => {
   const randomPart = Math.random().toString(36).slice(2, 10).toUpperCase();
   return `MOCK-${Date.now()}-${randomPart}`;
 };
+const SLOT_MULTIPLIERS = {
+  morning: 0.4,
+  afternoon: 0.45,
+  evening: 0.6,
+  fullday: 1.0,
+};
 
 export const createBookingWithUpfrontPayment = async (payload) => {
-  const { userId, vendorId, venueId, date } = payload;
+  const { userId, vendorId, venueId, date, selectedSlot, selectedFoodType, guestCount } = payload;
   const bookingDate = String(date || "").trim();
 
   if (!userId || !vendorId || !venueId || !date) {
@@ -89,13 +95,10 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     throw createError("Venue is not available for booking yet.", 403);
   }
 
-  const totalBookingAmount = normalizeTotalAmount(payload);
-  const upfrontPaymentAmount = calculateUpfrontPayment(totalBookingAmount);
-
   const [user, vendor, venue] = await Promise.all([
     User.findById(userId).select("_id"),
     Vendor.findById(vendorId).select("_id"),
-    Venue.findById(venueId).select("_id vendorId isSubscriptionActive availableFrom"),
+    Venue.findById(venueId).select("_id vendorId isSubscriptionActive availableFrom pricePerDay vegPrice nonVegPrice"),
   ]);
 
   if (!user) {
@@ -131,14 +134,42 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     }
   }
 
-  const existingBooking = await Booking.findOne({
+  // Calculate pricing based on slot
+  const slot = (selectedSlot || "fullday").toLowerCase();
+  if (!SLOT_MULTIPLIERS.hasOwnProperty(slot)) {
+    throw createError(`Invalid time slot selected: ${selectedSlot}`);
+  }
+  const slotMultiplier = SLOT_MULTIPLIERS[slot];
+  const basePrice = venue.pricePerDay || 0;
+  const calculatedVenueAmount = toMoney(basePrice * slotMultiplier);
+
+  // Food calculation
+  const foodType = String(selectedFoodType || "none").toLowerCase();
+  const guests = Math.max(0, Number(guestCount || 0));
+  let perPlatePrice = 0;
+  if (foodType === "veg") {
+    perPlatePrice = venue.vegPrice || 0;
+  } else if (foodType === "nonveg") {
+    perPlatePrice = venue.nonVegPrice || 0;
+  }
+  const foodTotal = toMoney(guests * perPlatePrice);
+  const finalAmount = calculatedVenueAmount + foodTotal;
+  const upfrontPaymentAmount = calculateUpfrontPayment(finalAmount);
+
+  // Check slot overlaps on the date
+  const activeBookings = await Booking.find({
     venueId,
     date: bookingDate,
     status: { $nin: ["rejected", "failed", "cancelled"] },
   });
 
-  if (existingBooking) {
-    throw createError("Venue is already booked on this date", 409);
+  const hasOverlap = activeBookings.some((b) => {
+    const existingSlot = (b.selectedSlot || "fullday").toLowerCase();
+    return existingSlot === slot || existingSlot === "fullday" || slot === "fullday";
+  });
+
+  if (hasOverlap) {
+    throw createError("Venue is already booked for this slot on this date", 409);
   }
 
   const booking = await Booking.create({
@@ -146,14 +177,25 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     vendorId,
     venueId,
     date: bookingDate,
-    cost: totalBookingAmount,
-    totalBookingAmount,
+    cost: finalAmount,
+    totalBookingAmount: finalAmount,
     upfrontPaymentAmount,
     amountPaid: 0,
     paymentStatus: "pending",
     transactionId: null,
     paymentTimestamp: null,
     status: "pending",
+    selectedSlot: slot,
+    basePrice,
+    slotMultiplier,
+    calculatedVenueAmount,
+    totalAmount: finalAmount,
+    selectedFoodType: foodType,
+    guestCount: guests,
+    perPlatePrice,
+    foodTotal,
+    venueAmount: calculatedVenueAmount,
+    finalAmount,
   });
 
   return booking;

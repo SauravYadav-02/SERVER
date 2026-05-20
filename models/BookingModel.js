@@ -58,6 +58,48 @@ const bookingSchema = new mongoose.Schema(
       enum: ["pending", "approved", "rejected", "success", "failed", "cancelled"],
       default: "pending",
     },
+    selectedSlot: {
+      type: String,
+      enum: ["morning", "afternoon", "evening", "fullday"],
+      default: "fullday",
+    },
+    basePrice: {
+      type: Number,
+    },
+    slotMultiplier: {
+      type: Number,
+    },
+    calculatedVenueAmount: {
+      type: Number,
+    },
+    totalAmount: {
+      type: Number,
+    },
+    selectedFoodType: {
+      type: String,
+      enum: ["veg", "nonveg", "none"],
+      default: "none",
+    },
+    guestCount: {
+      type: Number,
+      default: 0,
+    },
+    perPlatePrice: {
+      type: Number,
+      default: 0,
+    },
+    foodTotal: {
+      type: Number,
+      default: 0,
+    },
+    venueAmount: {
+      type: Number,
+      default: 0,
+    },
+    finalAmount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );

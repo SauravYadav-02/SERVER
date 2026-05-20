@@ -23,8 +23,32 @@ router.get("/venue/:venueId/booked-dates", async (req, res) => {
     }
 
     const bookings = await Booking.find({ venueId, status: { $nin: ["rejected", "failed", "cancelled"] } });
-    const bookedDates = bookings.map((b) => b.date);
-    res.json({ bookedDates });
+    
+    const bookingsByDate = {};
+    bookings.forEach((b) => {
+      if (!bookingsByDate[b.date]) {
+        bookingsByDate[b.date] = [];
+      }
+      bookingsByDate[b.date].push((b.selectedSlot || "fullday").toLowerCase());
+    });
+
+    const bookedDates = [];
+    Object.keys(bookingsByDate).forEach((date) => {
+      const slots = bookingsByDate[date];
+      if (
+        slots.includes("fullday") ||
+        (slots.includes("morning") && slots.includes("afternoon") && slots.includes("evening"))
+      ) {
+        bookedDates.push(date);
+      }
+    });
+
+    const activeBookings = bookings.map((b) => ({
+      date: b.date,
+      selectedSlot: b.selectedSlot || "fullday",
+    }));
+
+    res.json({ bookedDates, activeBookings });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch booked dates" });
   }
