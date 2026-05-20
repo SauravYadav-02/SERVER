@@ -1,11 +1,8 @@
 import mongoose from "mongoose";
 import PaymentHistory from "../models/PaymentHistoryModel.js";
 import Vendor from "../models/VendorModel.js";
-<<<<<<< HEAD
-=======
 import User from "../models/UserModel.js";
 import Admin from "../models/AdminModel.js";
->>>>>>> 40c8d7bb903d79d30f815186249dcb033d2a1109
 import UserVendorPayment from "../models/UserVendorPaymentModel.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
@@ -24,7 +21,6 @@ const createError = (message, statusCode = 400) => {
 };
 
 export const createPaymentHistory = async (payload) => {
-<<<<<<< HEAD
   const {
     vendorId,
     userId,
@@ -36,9 +32,6 @@ export const createPaymentHistory = async (payload) => {
     transactionId,
     description,
   } = payload;
-=======
-  const { vendorId, userId, adminId, type, relatedId, amount, paymentStatus, transactionId, description } = payload;
->>>>>>> 40c8d7bb903d79d30f815186249dcb033d2a1109
 
   if (!vendorId || !type || !relatedId || amount === undefined) {
     throw createError("vendorId, type, relatedId, and amount are required");
@@ -245,17 +238,7 @@ export const getPaymentHistoryForVendor = async (vendorId, filters = {}) => {
     return dateB.getTime() - dateA.getTime();
   });
 
-<<<<<<< HEAD
   return combined;
-=======
-  const paymentHistories = await PaymentHistory.find(query)
-    .populate("userId", "name username email")
-    .populate("adminId", "username")
-    .populate("vendorId", "fullName email businessName")
-    .sort({ paymentTimestamp: -1, createdAt: -1 });
-
-  return paymentHistories;
->>>>>>> 40c8d7bb903d79d30f815186249dcb033d2a1109
 };
 
 export const getAllPaymentHistory = async (filters = {}) => {
@@ -356,7 +339,6 @@ export const getUserVendorPaymentHistory = async (filters = {}) => {
     if (filters.endDate) uvpQuery.paymentTimestamp.$lte = new Date(filters.endDate);
   }
 
-<<<<<<< HEAD
   const [totalRecords, records] = await Promise.all([
     UserVendorPayment.countDocuments(uvpQuery),
     UserVendorPayment.find(uvpQuery)
@@ -368,13 +350,6 @@ export const getUserVendorPaymentHistory = async (filters = {}) => {
       .limit(l)
       .lean()
   ]);
-=======
-  const paymentHistories = await PaymentHistory.find(query)
-    .populate("vendorId", "fullName email businessName businessType address state pincode status")
-    .populate("userId", "name username email profilePhoto phone")
-    .populate("adminId", "username")
-    .sort({ paymentTimestamp: -1, createdAt: -1 });
->>>>>>> 40c8d7bb903d79d30f815186249dcb033d2a1109
 
   const mappedData = records.map(rec => ({
     ...rec,
