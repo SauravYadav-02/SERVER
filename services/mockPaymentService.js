@@ -179,23 +179,9 @@ export const simulatePayment = async ({ bookingId, outcome, status, paymentStatu
 
   await booking.save();
 
-  // Create payment history entry
-  try {
-    await createPaymentHistory({
-      vendorId: booking.vendorId,
-      userId: booking.userId,
-      type: "booking",
-      relatedId: booking._id,
-      amount: upfrontPaymentAmount,
-      paymentStatus: simulatedPaymentStatus,
-      transactionId,
-      description: `Upfront payment for booking on ${booking.date}`,
-    });
-  } catch (error) {
-    console.error("Failed to create payment history:", error.message);
-    // Don't fail the payment if history creation fails
-  }
-
+  // Transaction storage is handled by the root service or needs to be added here if this is active.
+  // For now, removing the duplicate PaymentHistory storage as requested.
+  
   return booking;
 };
 

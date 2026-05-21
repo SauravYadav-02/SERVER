@@ -34,6 +34,8 @@ const venueSchema = new mongoose.Schema(
     lat: String,
     lng: String,
 
+    venueTypes: [String],
+    eventsSupported: [String],
     amenities: [String],
 
     availableFrom: { type: Date },
@@ -74,8 +76,30 @@ const venueSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    ratingCount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );
+
+// ─── Performance Indexes for /discover endpoint ───────────────────────────────
+
+// Compound index: every discover query starts with these two fields
+venueSchema.index({ status: 1, isSubscriptionActive: 1 });
+
+// Sorting & filtering indexes
+venueSchema.index({ pricePerDay: 1 });
+venueSchema.index({ averageRating: -1 });
+venueSchema.index({ capacity: -1 });
+venueSchema.index({ createdAt: -1 });
+venueSchema.index({ city: 1 });
+venueSchema.index({ type: 1 });
+venueSchema.index({ venueTypes: 1 });
+venueSchema.index({ eventsSupported: 1 });
+
+// NOTE: No $text index — we use case-insensitive $or regex search instead,
+//       which is incompatible with MongoDB text indexes in the same query.
 
 export default mongoose.model("Venue", venueSchema);

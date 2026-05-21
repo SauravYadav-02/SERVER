@@ -81,8 +81,41 @@ router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
     const imagePaths = req.files?.map((file) => file.path);
     const { reviews, averageRating, ratingCount, ...venueData } = req.body;
 
+    let venueTypes = [];
+    if (venueData.venueTypes) {
+      try {
+        venueTypes = JSON.parse(venueData.venueTypes);
+      } catch {
+        venueTypes = typeof venueData.venueTypes === 'string' ? venueData.venueTypes.split(',').map(s => s.trim()) : venueData.venueTypes;
+      }
+    }
+
+    let eventsSupported = [];
+    if (venueData.eventsSupported) {
+      try {
+        eventsSupported = JSON.parse(venueData.eventsSupported);
+      } catch {
+        eventsSupported = typeof venueData.eventsSupported === 'string' ? venueData.eventsSupported.split(',').map(s => s.trim()) : venueData.eventsSupported;
+      }
+    }
+
+    let amenities = [];
+    if (venueData.amenities) {
+      try {
+        amenities = JSON.parse(venueData.amenities);
+      } catch {
+        amenities = typeof venueData.amenities === 'string' ? venueData.amenities.split(',').map(s => s.trim()) : venueData.amenities;
+      }
+    }
+
+    const firstType = Array.isArray(venueTypes) && venueTypes.length > 0 ? venueTypes[0] : (venueData.type || "");
+
     const venue = new Venue({
       ...venueData,
+      type: firstType,
+      venueTypes: Array.isArray(venueTypes) ? venueTypes : [],
+      eventsSupported: Array.isArray(eventsSupported) ? eventsSupported : [],
+      amenities: Array.isArray(amenities) ? amenities : [],
       mediaFiles: imagePaths,
     });
 
@@ -90,6 +123,113 @@ router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
 
     res.status(201).json(venue);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// ✅ GET /venues/discover — Paginated, searchable, filterable
+//    Query params:
+//      page, limit, search, city, category,
+//      minPrice, maxPrice, capacity, sort
+// ─────────────────────────────────────────────────────────────
+router.get("/discover", async (req, res) => {
+  try {
+    // ── Parse & validate query params ─────────────────────────
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 9));
+    const skip  = (page - 1) * limit;
+
+    const { search, city, category, minPrice, maxPrice, capacity, sort } = req.query;
+
+    // ── Build Mongoose filter object ──────────────────────────
+    // Start with the required base conditions
+    const andConditions = [
+      { status: "approved" },
+      { isSubscriptionActive: true },
+    ];
+
+    // Full-text search: regex across name, description, city, type
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), "i");
+      andConditions.push({
+        $or: [
+          { name:        regex },
+          { description: regex },
+          { city:        regex },
+          { type:        regex },
+        ],
+      });
+    }
+
+    // City filter (case-insensitive partial match)
+    if (city && city.trim()) {
+      andConditions.push({ city: new RegExp(city.trim(), "i") });
+    }
+
+    // Venue type/category filter
+    if (category && category.trim()) {
+      andConditions.push({ type: new RegExp(category.trim(), "i") });
+    }
+
+    // Price range filter
+    if (minPrice || maxPrice) {
+      const priceFilter = {};
+      if (minPrice && !isNaN(Number(minPrice))) priceFilter.$gte = Number(minPrice);
+      if (maxPrice && !isNaN(Number(maxPrice))) priceFilter.$lte = Number(maxPrice);
+      if (Object.keys(priceFilter).length > 0) {
+        andConditions.push({ pricePerDay: priceFilter });
+      }
+    }
+
+    // Minimum capacity filter
+    if (capacity && !isNaN(Number(capacity)) && Number(capacity) > 0) {
+      andConditions.push({ capacity: { $gte: Number(capacity) } });
+    }
+
+    // Combine all conditions with $and
+    const filter = { $and: andConditions };
+
+    // ── Build sort object ─────────────────────────────────────
+    let sortObj = {};
+    switch (sort) {
+      case "price_low":     sortObj = { pricePerDay: 1 };                          break;
+      case "price_high":    sortObj = { pricePerDay: -1 };                         break;
+      case "rating_high":   sortObj = { averageRating: -1, totalReviews: -1 };     break;
+      case "capacity_high": sortObj = { capacity: -1 };                            break;
+      case "oldest":        sortObj = { createdAt: 1 };                            break;
+      default:              sortObj = { createdAt: -1 };   // newest
+    }
+
+    // ── Execute count + paginated query in parallel ───────────
+    const [totalItems, rawVenues] = await Promise.all([
+      Venue.countDocuments(filter),
+      Venue.find(filter)
+        .sort(sortObj)
+        .skip(skip)
+        .limit(limit)
+        .populate("vendorId", "fullName email")
+        .lean(),
+    ]);
+
+    // ── Attach live rating stats ──────────────────────────────
+    const venues = await attachRatingStats(rawVenues);
+
+    // ── Pagination metadata ───────────────────────────────────
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+    const pagination = {
+      totalItems,
+      totalPages,
+      currentPage: page,
+      pageSize:    limit,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    };
+
+    res.json({ venues, pagination });
+  } catch (err) {
+    console.error("[/discover] Error:", err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
@@ -282,6 +422,39 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
     // If the admin is not explicitly providing a status, reset it to pending (indicates vendor edit)
     if (!req.body.status) {
       updateData.status = "pending";
+    }
+
+    let venueTypes = [];
+    if (updateData.venueTypes) {
+      try {
+        venueTypes = JSON.parse(updateData.venueTypes);
+      } catch {
+        venueTypes = typeof updateData.venueTypes === 'string' ? updateData.venueTypes.split(',').map(s => s.trim()) : updateData.venueTypes;
+      }
+      updateData.venueTypes = Array.isArray(venueTypes) ? venueTypes : [];
+      if (updateData.venueTypes.length > 0) {
+        updateData.type = updateData.venueTypes[0];
+      }
+    }
+
+    let eventsSupported = [];
+    if (updateData.eventsSupported) {
+      try {
+        eventsSupported = JSON.parse(updateData.eventsSupported);
+      } catch {
+        eventsSupported = typeof updateData.eventsSupported === 'string' ? updateData.eventsSupported.split(',').map(s => s.trim()) : updateData.eventsSupported;
+      }
+      updateData.eventsSupported = Array.isArray(eventsSupported) ? eventsSupported : [];
+    }
+
+    let amenities = [];
+    if (updateData.amenities) {
+      try {
+        amenities = JSON.parse(updateData.amenities);
+      } catch {
+        amenities = typeof updateData.amenities === 'string' ? updateData.amenities.split(',').map(s => s.trim()) : updateData.amenities;
+      }
+      updateData.amenities = Array.isArray(amenities) ? amenities : [];
     }
 
     const updatedVenue = await Venue.findByIdAndUpdate(
