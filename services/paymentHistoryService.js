@@ -365,3 +365,169 @@ export const getUserVendorPaymentHistory = async (filters = {}) => {
     totalPages: Math.ceil(totalRecords / l)
   };
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: Vendor self-service — subscription payment history only
+//   - Scoped strictly to the requesting vendor (no URL param spoofing)
+//   - Types: "subscription" and "full payment" only
+//   - Pagination at DB level (countDocuments + skip/limit)
+//   - Filters: paymentStatus, type, startDate, endDate (by createdAt)
+//   - Enrichment: billingPeriod from linked Subscription record
+//   - Summary: totalPaid (success), countByStatus
+// ─────────────────────────────────────────────────────────────────────────────
+import Subscription from "../models/SubscriptionModel.js";
+
+const SUB_TYPES = ["subscription", "full payment"];
+const MAX_LIMIT = 100;
+
+const isValidDate = (value) => !Number.isNaN(new Date(value).getTime());
+
+export const getSubscriptionPaymentHistoryForVendor = async (vendorId, filters = {}) => {
+  // ── Validate vendorId ─────────────────────────────────────────────────────
+  if (!vendorId || !isValidObjectId(vendorId)) {
+    throw createError("vendorId must be a valid MongoDB ObjectId", 400);
+  }
+
+  const vendor = await Vendor.findById(vendorId).select("_id fullName email");
+  if (!vendor) {
+    throw createError("Vendor not found", 404);
+  }
+
+  // ── Validate & parse filters ──────────────────────────────────────────────
+  const { paymentStatus, type, startDate, endDate } = filters;
+
+  if (paymentStatus && !PAYMENT_STATUSES.includes(paymentStatus)) {
+    throw createError(`paymentStatus must be one of: ${PAYMENT_STATUSES.join(", ")}`, 400);
+  }
+
+  if (type && !SUB_TYPES.includes(type)) {
+    throw createError(`type must be one of: ${SUB_TYPES.join(", ")}`, 400);
+  }
+
+  if (startDate && !isValidDate(startDate)) {
+    throw createError("startDate must be a valid ISO date string", 400);
+  }
+
+  if (endDate && !isValidDate(endDate)) {
+    throw createError("endDate must be a valid ISO date string", 400);
+  }
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  const page  = Math.max(1, parseInt(filters.page)  || 1);
+  const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(filters.limit) || 10));
+  const skip  = (page - 1) * limit;
+
+  // ── Build query ───────────────────────────────────────────────────────────
+  const query = {
+    vendorId,
+    type: type ? type : { $in: SUB_TYPES }, // subscription types only
+  };
+
+  if (paymentStatus) {
+    query.paymentStatus = paymentStatus;
+  }
+
+  // Date filter uses createdAt so pending records (paymentTimestamp = null) are included
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) query.createdAt.$gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999); // inclusive end of day
+      query.createdAt.$lte = end;
+    }
+  }
+
+  // ── Summary stats (across ALL records for this vendor, ignoring pagination) ─
+  const summaryAgg = await PaymentHistory.aggregate([
+    { $match: { vendorId: new mongoose.Types.ObjectId(vendorId), type: { $in: SUB_TYPES } } },
+    {
+      $group: {
+        _id: "$paymentStatus",
+        count: { $sum: 1 },
+        totalAmount: { $sum: "$amount" },
+      },
+    },
+  ]);
+
+  const countByStatus = { pending: 0, success: 0, failed: 0 };
+  let totalPaid = 0;
+
+  for (const row of summaryAgg) {
+    countByStatus[row._id] = row.count;
+    if (row._id === "success") totalPaid = row.totalAmount;
+  }
+
+  // ── Paginated fetch ───────────────────────────────────────────────────────
+  const [totalRecords, records] = await Promise.all([
+    PaymentHistory.countDocuments(query),
+    PaymentHistory.find(query)
+      .populate("adminId", "username")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+  ]);
+
+  // ── Enrich with billing period from Subscription ──────────────────────────
+  let vendorSub = null;
+  try {
+    vendorSub = await Subscription.findOne({ vendorId }).select(
+      "startDate endDate graceEndDate planSnapshot fullPayments"
+    ).lean();
+  } catch {
+    // non-critical — proceed without billing period
+  }
+
+  const enriched = records.map((record) => {
+    let billingPeriod = null;
+
+    if (vendorSub) {
+      if (record.type === "subscription") {
+        billingPeriod = {
+          startDate: vendorSub.startDate,
+          endDate:   vendorSub.endDate,
+        };
+      } else if (record.type === "full payment" && vendorSub.fullPayments?.length) {
+        // Match the full payment entry by relatedId
+        const matched = vendorSub.fullPayments.find(
+          (fp) => fp._id?.toString() === record.relatedId?.toString()
+        );
+        if (matched) {
+          billingPeriod = { startDate: matched.startDate, endDate: matched.endDate };
+        }
+      }
+    }
+
+    return {
+      ...record,
+      paymentMethod: "online", // always online
+      paymentDate: record.paymentTimestamp || null,
+      billingPeriod,
+    };
+  });
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / limit));
+
+  return {
+    data: enriched,
+    pagination: {
+      page,
+      limit,
+      totalRecords,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1,
+    },
+    summary: {
+      totalPaid,
+      countByStatus,
+    },
+    filters: {
+      paymentStatus: paymentStatus || null,
+      type: type || null,
+      startDate: startDate || null,
+      endDate: endDate || null,
+    },
+  };
+};

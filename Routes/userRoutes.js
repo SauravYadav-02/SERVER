@@ -27,6 +27,11 @@ router.post("/register", userUpload.single("profilePhoto"), async (req, res) => 
         
         const userData = req.body;
         
+        // Ensure terms are accepted
+        if (!userData.acceptedTermsVersion) {
+            return res.status(400).json({ message: "You must accept the terms and conditions and provide the accepted terms version." });
+        }
+        
         // Add profile photo path if file was uploaded
         if (req.file) {
             userData.profilePhoto = req.file.path.replace(/\\/g, "/");
