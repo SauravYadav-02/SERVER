@@ -53,6 +53,15 @@ const userSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "Venue"
     }],
+    // Terms & Conditions tracking
+    acceptedTermsVersion: {
+        type: String,
+        required: [true, "You must accept the terms and conditions"],
+    },
+    acceptedTermsAt: {
+        type: Date,
+        default: Date.now
+    },
     // deleted flag for soft delete
     deleted: {
         type: Boolean,
