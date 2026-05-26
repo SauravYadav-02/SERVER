@@ -142,44 +142,26 @@ router.get("/discover", async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 9));
     const skip  = (page - 1) * limit;
 
-<<<<<<< HEAD
-    const { search, city, category, minPrice, maxPrice, capacity, sort } = req.query;
-=======
     const { search, city, category, minPrice, maxPrice, capacity, sort, amenities } = req.query;
->>>>>>> 030be4de094951f4e27f268c7787a507fb5a3a24
 
     // ── Build Mongoose filter object ──────────────────────────
     // Start with the required base conditions
     const andConditions = [
       { status: "approved" },
-<<<<<<< HEAD
-      { isSubscriptionActive: true },
-    ];
-
-    // Full-text search: regex across name, description, city, type
-=======
       // { isSubscriptionActive: true },
     ];
 
     // Full-text search: regex across name, description, city, type, venueTypes, eventsSupported
->>>>>>> 030be4de094951f4e27f268c7787a507fb5a3a24
     if (search && search.trim()) {
       const regex = new RegExp(search.trim(), "i");
       andConditions.push({
         $or: [
-<<<<<<< HEAD
-          { name:        regex },
-          { description: regex },
-          { city:        regex },
-          { type:        regex },
-=======
           { name:            regex },
           { description:     regex },
           { city:            regex },
           { type:            regex },
           { venueTypes:      regex },
           { eventsSupported: regex },
->>>>>>> 030be4de094951f4e27f268c7787a507fb5a3a24
         ],
       });
     }
@@ -189,11 +171,6 @@ router.get("/discover", async (req, res) => {
       andConditions.push({ city: new RegExp(city.trim(), "i") });
     }
 
-<<<<<<< HEAD
-    // Venue type/category filter
-    if (category && category.trim()) {
-      andConditions.push({ type: new RegExp(category.trim(), "i") });
-=======
     // Venue type/category filter (checks both type and venueTypes array)
     if (category && category.trim() && category.trim().toLowerCase() !== "all") {
       const categoriesArray = category.split(',').map(c => new RegExp(c.trim(), "i"));
@@ -222,7 +199,6 @@ router.get("/discover", async (req, res) => {
       if (amenitiesArray.length > 0) {
         andConditions.push({ amenities: { $all: amenitiesArray } });
       }
->>>>>>> 030be4de094951f4e27f268c7787a507fb5a3a24
     }
 
     // Price range filter
@@ -516,38 +492,6 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
       updateData.status = "pending";
     }
 
-    let venueTypes = [];
-    if (updateData.venueTypes) {
-      try {
-        venueTypes = JSON.parse(updateData.venueTypes);
-      } catch {
-        venueTypes = typeof updateData.venueTypes === 'string' ? updateData.venueTypes.split(',').map(s => s.trim()) : updateData.venueTypes;
-      }
-      updateData.venueTypes = Array.isArray(venueTypes) ? venueTypes : [];
-      if (updateData.venueTypes.length > 0) {
-        updateData.type = updateData.venueTypes[0];
-      }
-    }
-
-    let eventsSupported = [];
-    if (updateData.eventsSupported) {
-      try {
-        eventsSupported = JSON.parse(updateData.eventsSupported);
-      } catch {
-        eventsSupported = typeof updateData.eventsSupported === 'string' ? updateData.eventsSupported.split(',').map(s => s.trim()) : updateData.eventsSupported;
-      }
-      updateData.eventsSupported = Array.isArray(eventsSupported) ? eventsSupported : [];
-    }
-
-    let amenities = [];
-    if (updateData.amenities) {
-      try {
-        amenities = JSON.parse(updateData.amenities);
-      } catch {
-        amenities = typeof updateData.amenities === 'string' ? updateData.amenities.split(',').map(s => s.trim()) : updateData.amenities;
-      }
-      updateData.amenities = Array.isArray(amenities) ? amenities : [];
-    }
 
     const updatedVenue = await Venue.findByIdAndUpdate(
       req.params.id,
