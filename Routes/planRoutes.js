@@ -1,6 +1,7 @@
 import express from "express";
 import Plan from "../models/PlanModel.js";
 import { isAdmin } from "../middleare/isAdmin.js";
+import { paginate } from "../utils/pagination.js";
 
 const router = express.Router();
 
@@ -51,12 +52,24 @@ router.get("/", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// GET /plans/all  ── Admin: view ALL plans including inactive
+// GET /plans/all  ── Admin: view ALL plans including inactive (Paginated)
 // ─────────────────────────────────────────────────────────────
 router.get("/all", isAdmin, async (req, res) => {
   try {
-    const plans = await Plan.find({ deletedAt: null }).sort({ createdAt: -1 });
-    res.json({ success: true, count: plans.length, plans });
+    const { page, limit, search } = req.query;
+    const query = { deletedAt: null };
+    
+    if (search) {
+      query.name = { $regex: search, $options: "i" };
+    }
+
+    const paginationResult = await paginate(Plan, query, {
+      page,
+      limit,
+      sort: { createdAt: -1 }
+    });
+
+    res.json({ success: true, ...paginationResult });
   } catch (err) {
     res.status(500).json({ success: false, message: "Failed to fetch plans.", error: err.message });
   }

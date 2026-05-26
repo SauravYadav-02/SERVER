@@ -89,17 +89,59 @@ const getActivePlan = async (planId) => {
   return plan;
 };
 
+const tryActivateNextPlan = async (vendorId) => {
+  const nextInQueue = await SubscriptionQueue.findOne(
+    { vendorId, isActivated: false },
+    null,
+    { sort: { position: 1 } }
+  );
+
+  if (!nextInQueue) return false;
+
+  const plan = await Plan.findOne({ _id: nextInQueue.planId, is_active: true, deletedAt: null });
+  if (!plan || !isBasePlan(plan)) {
+    console.warn(`[SubService] Queued plan ${nextInQueue.planId} is no longer an active base plan.`);
+    return false;
+  }
+
+  // Activate the plan
+  await activatePlan(vendorId, plan, new Date());
+
+  // Mark queue item as activated
+  nextInQueue.isActivated = true;
+  nextInQueue.activatedAt = new Date();
+  await nextInQueue.save();
+
+  return true;
+};
+
 const syncSubscriptionStatus = async (sub) => {
   const now = new Date();
   let changed = false;
   let shouldDeactivateVenues = false;
 
   if (sub.status === "active" && now > sub.endDate) {
+    // ✅ NEW: Automatically activate add-on subscription if available (Requirement)
+    const activated = await tryActivateNextPlan(sub.vendorId);
+    if (activated) {
+      // Plan refreshed! Reload subscription data
+      const refreshedSub = await Subscription.findOne({ _id: sub._id });
+      return refreshedSub;
+    }
+    
+    // If no add-on, give grace period (Requirement)
     sub.status = "grace";
     changed = true;
   }
 
   if (sub.status === "grace" && now > sub.graceEndDate) {
+    // If grace ends, check queue one last time (e.g. if they paid during grace)
+    const activated = await tryActivateNextPlan(sub.vendorId);
+    if (activated) {
+      const refreshedSub = await Subscription.findOne({ _id: sub._id });
+      return refreshedSub;
+    }
+
     sub.status = "expired";
     changed = true;
     shouldDeactivateVenues = true;
@@ -123,7 +165,13 @@ const syncSubscriptionStatus = async (sub) => {
   return sub;
 };
 
-export const activatePlan = async (vendorId, plan, startDate = new Date(), endDate = null, adminId = null) => {
+export const activatePlan = async (vendorId, plan, startDate = new Date(), endDate = null, optionsOrAdminId = {}) => {
+  let adminId = null;
+  if (optionsOrAdminId && typeof optionsOrAdminId === "object") {
+    adminId = optionsOrAdminId.adminId || null;
+  } else {
+    adminId = optionsOrAdminId || null;
+  }
   const { startDate: sd, endDate: ed, graceEndDate: ged } = buildDates(
     startDate,
     plan.duration_days,
@@ -314,7 +362,43 @@ export const confirmSubscriptionPayment = async (vendorId, transactionId) => {
   }
 };
 
-export const fullPaymentSubscription = async ({ vendorId, plan, startDate = new Date(), endDate = null, paymentRecord = null, adminId = null }) => {
+export const fullPaymentSubscription = async (
+  firstParam,
+  planIdOrPlan,
+  startDateParam = new Date(),
+  endDateParam = null,
+  optionsOrAdminId = {}
+) => {
+  let vendorId, plan, startDate, endDate, paymentRecord, adminId;
+
+  if (firstParam && typeof firstParam === "object" && ("vendorId" in firstParam || "plan" in firstParam)) {
+    // Called with object signature: { vendorId, plan, startDate, endDate, paymentRecord, adminId }
+    ({ vendorId, plan, startDate = new Date(), endDate = null, paymentRecord = null, adminId = null } = firstParam);
+  } else {
+    // Called with positional signature: (vendorId, planIdOrPlan, startDate, endDate, optionsOrAdminId)
+    vendorId = firstParam;
+    startDate = startDateParam;
+    endDate = endDateParam;
+    
+    if (planIdOrPlan && typeof planIdOrPlan === "object" && planIdOrPlan.price !== undefined) {
+      plan = planIdOrPlan;
+    } else {
+      plan = await getActivePlan(planIdOrPlan);
+    }
+
+    if (optionsOrAdminId && typeof optionsOrAdminId === "object") {
+      adminId = optionsOrAdminId.adminId || null;
+      paymentRecord = optionsOrAdminId.paymentRecord || null;
+    } else {
+      adminId = optionsOrAdminId || null;
+      paymentRecord = null;
+    }
+  }
+
+  if (!isFullPaymentPlan(plan)) {
+    throw createError(400, "Plan must be a full-payment plan.");
+  }
+
   const sub = await Subscription.findOne({ vendorId }).populate(
     "planId",
     "name price duration_days features planType"
@@ -340,8 +424,6 @@ export const fullPaymentSubscription = async ({ vendorId, plan, startDate = new 
     throw createError(404, "Vendor not found.");
   }
 
-  // Update top-level subscription fields too if needed, 
-  // or just ensure they are set if it's a full payment.
   sub.adminId = adminId || sub.adminId || null;
   sub.adminName = admin?.username || sub.adminName || "";
   sub.vendorName = vendor.fullName || sub.vendorName || "";
@@ -367,7 +449,7 @@ export const fullPaymentSubscription = async ({ vendorId, plan, startDate = new 
     paymentRecord.relatedId = addedFullPayment._id;
     await paymentRecord.save();
   } else {
-    // Create new payment history if not coming from confirmSubscriptionPayment
+    // Create new payment history
     try {
       await createPaymentHistory({
         vendorId,
@@ -389,7 +471,6 @@ export const fullPaymentSubscription = async ({ vendorId, plan, startDate = new 
     subscription: await buildSubscriptionData(sub),
   };
 };
-
 export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate, adminId }) => {
   const vendor = await Vendor.findById(vendorId);
   if (!vendor) {
@@ -401,7 +482,7 @@ export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, e
     throw createError(400, "Admin assignment requires a base subscription plan.");
   }
 
-  const sub = await activatePlan(vendorId, plan, startDate || new Date(), endDate || null, adminId);
+  const sub = await activatePlan(vendorId, plan, startDate || new Date(), endDate || null, { adminId });
 
   return {
     message: "Subscription assigned successfully.",
@@ -409,22 +490,40 @@ export const assignSubscriptionByAdmin = async ({ vendorId, planId, startDate, e
   };
 };
 
+
 export const fullPaymentSubscriptionByAdmin = async ({ vendorId, planId, startDate, endDate, adminId }) => {
   const vendor = await Vendor.findById(vendorId);
   if (!vendor) {
     throw createError(404, "Vendor not found.");
   }
 
-  const plan = await getActivePlan(planId);
-  if (!isFullPaymentPlan(plan)) {
-    throw createError(400, "Plan must be a full-payment plan.");
-  }
-
-  return fullPaymentSubscription({ vendorId, plan, startDate: startDate || new Date(), endDate: endDate || null, adminId });
+  return fullPaymentSubscription(vendorId, planId, startDate || new Date(), endDate || null, { adminId });
 };
 
-export const getAllSubscriptionsForAdmin = async ({ expiringSoonOnly = false } = {}) => {
-  const subscriptions = await Subscription.find()
+export const getAllSubscriptionsForAdmin = async ({ expiringSoonOnly = false, page = 1, limit = 10, search = "", status = "" } = {}) => {
+  const p = Math.max(1, parseInt(page) || 1);
+  const l = Math.max(1, parseInt(limit) || 10);
+  const skip = (p - 1) * l;
+
+  const query = {};
+  if (status) query.status = status;
+
+  if (search) {
+    const vendors = await Vendor.find({
+      $or: [
+        { fullName: { $regex: search, $options: "i" } },
+        { businessName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ],
+    }).select("_id");
+    query.vendorId = { $in: vendors.map((v) => v._id) };
+  }
+
+  // To calculate total matching records for pagination, we need to handle expiringSoonOnly
+  // This is complex for a simple query, so we'll fetch more and filter, or just count first.
+  // For better performance, we should ideally use aggregation, but let's stick to find for now.
+
+  const subscriptions = await Subscription.find(query)
     .populate("vendorId", "fullName email phone businessName businessType address state pincode status")
     .populate("planId", "name price duration_days features planType")
     .sort({ createdAt: -1 });
@@ -444,7 +543,30 @@ export const getAllSubscriptionsForAdmin = async ({ expiringSoonOnly = false } =
     }
   }
 
-  return completeData;
+  const totalRecords = completeData.length;
+  const paginatedData = completeData.slice(skip, skip + l);
+  const totalPages = Math.ceil(totalRecords / l);
+
+  return {
+    data: paginatedData,
+    page: p,
+    limit: l,
+    totalRecords,
+    totalPages,
+    // Include full summary data if needed (for monitoring dashboard)
+    summary: {
+      total: completeData.length,
+      active: completeData.filter((sub) => sub.status === "active").length,
+      grace: completeData.filter((sub) => sub.status === "grace").length,
+      expired: completeData.filter((sub) => sub.status === "expired").length,
+      expiringSoon: completeData.filter((sub) => {
+          const data = sub; // completeData contains built data
+          return data.expirationWarning.expiresWithin15Days ||
+                 data.graceExpirationWarning.expiresWithin15Days ||
+                 data.fullPayments.some((fp) => fp.expirationWarning.expiresWithin15Days);
+      }).length
+    }
+  };
 };
 
 export const getVendorSubscriptionForAdmin = async (vendorId) => {
@@ -470,10 +592,15 @@ export const handleExpiry = async () => {
   });
 
   for (const sub of expiredActives) {
-    sub.status = "grace";
-    await sub.save();
+    const activated = await tryActivateNextPlan(sub.vendorId);
+    if (activated) {
+      console.log(`[Cron] Vendor ${sub.vendorId} main subscription expired. Queued plan activated.`);
+    } else {
+      sub.status = "grace";
+      await sub.save();
+      console.log(`[Cron] Vendor ${sub.vendorId} moved to grace period.`);
+    }
     processed++;
-    console.log(`[Cron] Vendor ${sub.vendorId} moved to grace period.`);
   }
 
   const expiredGraces = await Subscription.find({
@@ -482,11 +609,16 @@ export const handleExpiry = async () => {
   });
 
   for (const sub of expiredGraces) {
-    sub.status = "expired";
-    await sub.save();
+    const activated = await tryActivateNextPlan(sub.vendorId);
+    if (activated) {
+      console.log(`[Cron] Vendor ${sub.vendorId} grace ended. Queued plan activated.`);
+    } else {
+      sub.status = "expired";
+      await sub.save();
 
-    const result = await Venue.updateMany({ vendorId: sub.vendorId }, { isSubscriptionActive: false });
-    console.log(`[Cron] Vendor ${sub.vendorId} expired. ${result.modifiedCount} venues hidden.`);
+      const result = await Venue.updateMany({ vendorId: sub.vendorId }, { isSubscriptionActive: false });
+      console.log(`[Cron] Vendor ${sub.vendorId} expired. ${result.modifiedCount} venues hidden.`);
+    }
 
     processed++;
   }

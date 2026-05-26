@@ -1,6 +1,8 @@
 import express from "express";
 import User from "../models/UserModel.js";
 import userUpload from "../middleare/userUpload.js";
+import { isAdmin } from "../middleare/isAdmin.js";
+import { paginate } from "../utils/pagination.js";
 
 const router = express.Router();
 
@@ -59,12 +61,32 @@ router.post("/login", async (req, res) => {
     }
 });
 
-// Get all users
-router.get("/", async (req, res) => {
+// Get all users (Admin - Paginated)
+router.get("/", isAdmin, async (req, res) => {
     try {
-        const users = await User.find().select("-password");
-        const response = users.map((user) => buildUserResponse(user, req));
-        res.json(response);
+        const { page, limit, search } = req.query;
+        
+        const query = { deleted: { $ne: true } };
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: "i" } },
+                { email: { $regex: search, $options: "i" } },
+            ];
+        }
+
+        const paginationResult = await paginate(User, query, {
+            page,
+            limit,
+            sort: { createdAt: -1 }
+        });
+
+        paginationResult.data = paginationResult.data.map((user) => {
+            const u = buildUserResponse(user, req);
+            delete u.password;
+            return u;
+        });
+        
+        res.json(paginationResult);
     } catch (error) {
         res.status(500).json({ message: "Failed to retrieve users", error: error.message });
     }

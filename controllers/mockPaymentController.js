@@ -2,6 +2,8 @@ import {
   createBookingWithUpfrontPayment,
   getVendorBookings,
   simulatePayment,
+  getUserPayments,
+  getVendorPayments,
 } from "../services/mockPaymentService.js";
 
 const handleError = (res, error) => {
@@ -47,6 +49,30 @@ export const vendorBookings = async (req, res) => {
 
     res.status(200).json({
       bookings,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
+export const userPayments = async (req, res) => {
+  try {
+    const payments = await getUserPayments(req.params.userId);
+
+    res.status(200).json({
+      payments,
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
+export const vendorPayments = async (req, res) => {
+  try {
+    const payments = await getVendorPayments(req.params.vendorId);
+
+    res.status(200).json({
+      payments,
     });
   } catch (error) {
     handleError(res, error);

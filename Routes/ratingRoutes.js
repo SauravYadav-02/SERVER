@@ -5,6 +5,20 @@ import User from "../models/UserModel.js";
 
 const router = express.Router();
 
+const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
+
+const buildReviewsResponse = (reviews, req) => {
+  return reviews.map((r) => {
+    const reviewObj = r.toObject ? r.toObject() : r;
+    if (reviewObj.userId && typeof reviewObj.userId === "object" && reviewObj.userId.profilePhoto) {
+      if (!reviewObj.userId.profilePhoto.startsWith("http")) {
+        reviewObj.userId.profilePhoto = `${req.protocol}://${req.get("host")}/${fixPath(reviewObj.userId.profilePhoto)}`;
+      }
+    }
+    return reviewObj;
+  });
+};
+
 // Helper to calculate rating stats for a venue and sync with Venue model
 const getRatingStats = async (venueId) => {
   const result = await RatingFeedback.aggregate([
@@ -66,7 +80,7 @@ router.get("/venue/:venueId", async (req, res) => {
     const stats = await getRatingStats(venue._id);
 
     res.json({
-      reviews,
+      reviews: buildReviewsResponse(reviews, req),
       averageRating: stats.averageRating,
       ratingCount: stats.ratingCount,
     });
@@ -137,7 +151,7 @@ router.post("/venue/:venueId", async (req, res) => {
       message,
       averageRating: stats.averageRating,
       ratingCount: stats.ratingCount,
-      reviews,
+      reviews: buildReviewsResponse(reviews, req),
     });
   } catch (err) {
     if (err.name === "CastError") {
@@ -237,7 +251,7 @@ router.get("/vendor/:vendorId", async (req, res) => {
     }, {});
 
     res.json({
-      reviews,
+      reviews: buildReviewsResponse(reviews, req),
       analytics,
       venueStats,
       totalPages: Math.ceil(totalReviewsCount / Number(limit)),
@@ -259,7 +273,7 @@ router.get("/", async (req, res) => {
       .populate("userId", "name email profilePhoto")
       .populate("venueId", "name vendorId")
       .sort({ createdAt: -1 });
-    res.json(reviews);
+    res.json(buildReviewsResponse(reviews, req));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,6 +1,10 @@
 import express from "express";
 import Booking from "../models/BookingModel.js";
 import { createBookingWithUpfrontPayment } from "../services/mockPaymentService.js";
+import { getVendorSubscriptionStatus } from "../services/subscriptionService.js";
+import Venue from "../models/VenueModel.js";
+import { isAdmin } from "../middleare/isAdmin.js";
+import { paginate } from "../utils/pagination.js";
 
 const router = express.Router();
 
@@ -8,9 +12,43 @@ const router = express.Router();
 router.get("/venue/:venueId/booked-dates", async (req, res) => {
   try {
     const { venueId } = req.params;
+
+    // Check venue and subscription status
+    const venue = await Venue.findById(venueId);
+    if (!venue) return res.status(404).json({ error: "Venue not found" });
+
+    const subStatus = await getVendorSubscriptionStatus(venue.vendorId);
+    if (subStatus === "expired" || subStatus === "none") {
+      return res.status(403).json({ error: "Venue is not available for booking yet." });
+    }
+
     const bookings = await Booking.find({ venueId, status: { $nin: ["rejected", "failed", "cancelled"] } });
-    const bookedDates = bookings.map((b) => b.date);
-    res.json({ bookedDates });
+    
+    const bookingsByDate = {};
+    bookings.forEach((b) => {
+      if (!bookingsByDate[b.date]) {
+        bookingsByDate[b.date] = [];
+      }
+      bookingsByDate[b.date].push((b.selectedSlot || "fullday").toLowerCase());
+    });
+
+    const bookedDates = [];
+    Object.keys(bookingsByDate).forEach((date) => {
+      const slots = bookingsByDate[date];
+      if (
+        slots.includes("fullday") ||
+        (slots.includes("morning") && slots.includes("afternoon") && slots.includes("evening"))
+      ) {
+        bookedDates.push(date);
+      }
+    });
+
+    const activeBookings = bookings.map((b) => ({
+      date: b.date,
+      selectedSlot: b.selectedSlot || "fullday",
+    }));
+
+    res.json({ bookedDates, activeBookings });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch booked dates" });
   }
@@ -75,15 +113,26 @@ router.put("/:bookingId/status", async (req, res) => {
   }
 });
 
-// Get all bookings (admin route)
-router.get("/", async (req, res) => {
+// Get all bookings (admin route - Paginated)
+router.get("/", isAdmin, async (req, res) => {
   try {
-    const bookings = await Booking.find({})
-      .populate("userId", "name email phone")
-      .populate("vendorId", "fullName email phone businessName businessType")
-      .populate("venueId", "name address city state zip country")
-      .sort({ createdAt: -1 });
-    res.json({ bookings });
+    const { page, limit, status } = req.query;
+
+    const query = {};
+    if (status) query.status = status;
+
+    const paginationResult = await paginate(Booking, query, {
+      page,
+      limit,
+      populate: [
+        { path: "userId", select: "name email phone" },
+        { path: "vendorId", select: "fullName email phone businessName businessType" },
+        { path: "venueId", select: "name address city state zip country" }
+      ],
+      sort: { createdAt: -1 }
+    });
+
+    res.json(paginationResult);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch all bookings" });
   }

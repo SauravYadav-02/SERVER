@@ -21,6 +21,11 @@ const paymentHistorySchema = new mongoose.Schema(
         return this.type === "full payment" || (this.type === "subscription" && !this.transactionId && !this.userId);
       }, // Required for admin-assigned payments
     },
+    adminId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      default: null,
+    },
     type: {
       type: String,
       enum: ["booking", "subscription", "full payment"],
@@ -64,6 +69,8 @@ const paymentHistorySchema = new mongoose.Schema(
 
 // Index for efficient queries
 paymentHistorySchema.index({ vendorId: 1, paymentTimestamp: -1 });
+paymentHistorySchema.index({ adminId: 1, paymentTimestamp: -1 });
+paymentHistorySchema.index({ userId: 1, paymentTimestamp: -1 });
 paymentHistorySchema.index({ type: 1, relatedId: 1 });
 
 export default mongoose.model("PaymentHistory", paymentHistorySchema);

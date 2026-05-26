@@ -4,6 +4,8 @@ import User from "../models/UserModel.js";
 import Vendor from "../models/VendorModel.js";
 import Venue from "../models/VenueModel.js";
 import { createPaymentHistory } from "./paymentHistoryService.js";
+import UserVendorPayment from "../models/UserVendorPaymentModel.js";
+import { getVendorSubscriptionStatus } from "./subscriptionService.js";
 
 const VALID_PAYMENT_OUTCOMES = ["success", "failure", "failed"];
 
@@ -64,9 +66,15 @@ export const generateMockTransactionId = () => {
   const randomPart = Math.random().toString(36).slice(2, 10).toUpperCase();
   return `MOCK-${Date.now()}-${randomPart}`;
 };
+const SLOT_MULTIPLIERS = {
+  morning: 0.4,
+  afternoon: 0.45,
+  evening: 0.6,
+  fullday: 1.0,
+};
 
 export const createBookingWithUpfrontPayment = async (payload) => {
-  const { userId, vendorId, venueId, date } = payload;
+  const { userId, vendorId, venueId, date, selectedSlot, selectedFoodType, guestCount } = payload;
   const bookingDate = String(date || "").trim();
 
   if (!userId || !vendorId || !venueId || !date) {
@@ -81,13 +89,16 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     throw createError("date must be a valid date in YYYY-MM-DD format");
   }
 
-  const totalBookingAmount = normalizeTotalAmount(payload);
-  const upfrontPaymentAmount = calculateUpfrontPayment(totalBookingAmount);
+  // ✅ NEW: SECURE SUBSCRIPTION VALIDATION (Requirement)
+  const subStatus = await getVendorSubscriptionStatus(vendorId);
+  if (subStatus === "expired" || subStatus === "none") {
+    throw createError("Venue is not available for booking yet.", 403);
+  }
 
   const [user, vendor, venue] = await Promise.all([
     User.findById(userId).select("_id"),
     Vendor.findById(vendorId).select("_id"),
-    Venue.findById(venueId).select("_id vendorId availableFrom"),
+    Venue.findById(venueId).select("_id vendorId isSubscriptionActive availableFrom pricePerDay vegPrice nonVegPrice"),
   ]);
 
   if (!user) {
@@ -106,10 +117,15 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     throw createError("venueId does not belong to the supplied vendorId");
   }
 
+  // Also check the flag on the venue itself (cached status)
+  if (!venue.isSubscriptionActive) {
+    throw createError("Venue is not available for booking yet.", 403);
+  }
+
   if (venue.availableFrom) {
     const parsedBookingDate = new Date(bookingDate);
     const parsedAvailableFrom = new Date(venue.availableFrom);
-    
+
     parsedBookingDate.setUTCHours(0, 0, 0, 0);
     parsedAvailableFrom.setUTCHours(0, 0, 0, 0);
 
@@ -118,14 +134,42 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     }
   }
 
-  const existingBooking = await Booking.findOne({
+  // Calculate pricing based on slot
+  const slot = (selectedSlot || "fullday").toLowerCase();
+  if (!SLOT_MULTIPLIERS.hasOwnProperty(slot)) {
+    throw createError(`Invalid time slot selected: ${selectedSlot}`);
+  }
+  const slotMultiplier = SLOT_MULTIPLIERS[slot];
+  const basePrice = venue.pricePerDay || 0;
+  const calculatedVenueAmount = toMoney(basePrice * slotMultiplier);
+
+  // Food calculation
+  const foodType = String(selectedFoodType || "none").toLowerCase();
+  const guests = Math.max(0, Number(guestCount || 0));
+  let perPlatePrice = 0;
+  if (foodType === "veg") {
+    perPlatePrice = venue.vegPrice || 0;
+  } else if (foodType === "nonveg") {
+    perPlatePrice = venue.nonVegPrice || 0;
+  }
+  const foodTotal = toMoney(guests * perPlatePrice);
+  const finalAmount = calculatedVenueAmount + foodTotal;
+  const upfrontPaymentAmount = calculateUpfrontPayment(finalAmount);
+
+  // Check slot overlaps on the date
+  const activeBookings = await Booking.find({
     venueId,
     date: bookingDate,
     status: { $nin: ["rejected", "failed", "cancelled"] },
   });
 
-  if (existingBooking) {
-    throw createError("Venue is already booked on this date", 409);
+  const hasOverlap = activeBookings.some((b) => {
+    const existingSlot = (b.selectedSlot || "fullday").toLowerCase();
+    return existingSlot === slot || existingSlot === "fullday" || slot === "fullday";
+  });
+
+  if (hasOverlap) {
+    throw createError("Venue is already booked for this slot on this date", 409);
   }
 
   const booking = await Booking.create({
@@ -133,14 +177,25 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     vendorId,
     venueId,
     date: bookingDate,
-    cost: totalBookingAmount,
-    totalBookingAmount,
+    cost: finalAmount,
+    totalBookingAmount: finalAmount,
     upfrontPaymentAmount,
     amountPaid: 0,
     paymentStatus: "pending",
     transactionId: null,
     paymentTimestamp: null,
     status: "pending",
+    selectedSlot: slot,
+    basePrice,
+    slotMultiplier,
+    calculatedVenueAmount,
+    totalAmount: finalAmount,
+    selectedFoodType: foodType,
+    guestCount: guests,
+    perPlatePrice,
+    foodTotal,
+    venueAmount: calculatedVenueAmount,
+    finalAmount,
   });
 
   return booking;
@@ -179,9 +234,31 @@ export const simulatePayment = async ({ bookingId, outcome, status, paymentStatu
 
   await booking.save();
 
+<<<<<<< HEAD
   // Transaction storage is handled by the root service or needs to be added here if this is active.
   // For now, removing the duplicate PaymentHistory storage as requested.
   
+=======
+  // Create transaction record
+  try {
+    // New UserVendorPayment (Specific as requested)
+    await UserVendorPayment.create({
+      bookingId: booking._id,
+      userId: booking.userId,
+      vendorId: booking.vendorId,
+      venueId: booking.venueId,
+      amount: upfrontPaymentAmount,
+      paymentStatus: simulatedPaymentStatus,
+      transactionId,
+      description: `Transaction between User and Vendor for booking on ${booking.date}`,
+    });
+
+  } catch (error) {
+    console.error("Failed to create transaction records:", error.message);
+    // Don't fail the payment if transaction creation fails
+  }
+
+>>>>>>> 030be4de094951f4e27f268c7787a507fb5a3a24
   return booking;
 };
 
@@ -225,4 +302,30 @@ export const getVendorBookings = async (vendorId) => {
       bookingStatus: booking.status,
     };
   });
+};
+
+export const getUserPayments = async (userId) => {
+  if (!userId || !isValidObjectId(userId)) {
+    throw createError("A valid userId is required");
+  }
+
+  const payments = await UserVendorPayment.find({ userId })
+    .populate("vendorId", "name businessName")
+    .populate("venueId", "name")
+    .sort({ createdAt: -1 });
+
+  return payments;
+};
+
+export const getVendorPayments = async (vendorId) => {
+  if (!vendorId || !isValidObjectId(vendorId)) {
+    throw createError("A valid vendorId is required");
+  }
+
+  const payments = await UserVendorPayment.find({ vendorId })
+    .populate("userId", "name email profilePhoto")
+    .populate("venueId", "name")
+    .sort({ createdAt: -1 });
+
+  return payments;
 };

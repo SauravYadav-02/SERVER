@@ -3,15 +3,19 @@ import Admin from "../models/AdminModel.js";
 import Venue from "../models/VenueModel.js";
 import RatingFeedback from "../models/RatingFeedbackModel.js";
 import { isAdmin } from "../middleare/isAdmin.js";
+import { paginate } from "../utils/pagination.js";
 
 const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
 
-const buildVenueResponse = (venue, req) => ({
-    ...venue._doc,
-    mediaFiles: venue.mediaFiles?.map((file) =>
-        file ? `${req.protocol}://${req.get("host")}/${fixPath(file)}` : null
-    ),
-});
+const buildVenueResponse = (venue, req) => {
+    const venueObj = venue.toObject ? venue.toObject() : venue;
+    return {
+        ...venueObj,
+        mediaFiles: venueObj.mediaFiles?.map((file) =>
+            file ? `${req.protocol}://${req.get("host")}/${fixPath(file)}` : null
+        ),
+    };
+};
 
 const router = express.Router();
 
@@ -35,12 +39,30 @@ router.post("/login", async (req,res)=>{
     res.json({message:"Login success", admin});
 });
 
-// Admin: Get all venues with vendor details
-router.get("/venues", async (req, res) => {
+// Admin: Get all venues with vendor details (Paginated)
+router.get("/venues", isAdmin, async (req, res) => {
     try {
-        const venues = await Venue.find().populate("vendorId", "fullName email phone businessName businessType address city state zip pincode status");
-        const response = venues.map((venue) => buildVenueResponse(venue, req));
-        res.json(response);
+        const { page, limit, search, status } = req.query;
+        
+        const query = {};
+        if (status) query.status = status;
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: "i" } },
+                { city: { $regex: search, $options: "i" } },
+            ];
+        }
+
+        const paginationResult = await paginate(Venue, query, {
+            page,
+            limit,
+            populate: { path: "vendorId", select: "fullName email phone businessName businessType address city state zip pincode status" },
+            sort: { createdAt: -1 }
+        });
+
+        paginationResult.data = paginationResult.data.map((venue) => buildVenueResponse(venue, req));
+        
+        res.json(paginationResult);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -82,22 +104,34 @@ router.put("/venues/:id/status", isAdmin, async (req, res) => {
     }
 });
 
-// Admin: Get all reviews across all venues
+// Admin: Get all reviews across all venues (Paginated)
 router.get("/reviews", isAdmin, async (req, res) => {
     try {
-        const reviews = await RatingFeedback.find()
-            .populate("userId", "name email")
-            .populate("venueId", "name");
-            
-        const allReviews = reviews.map(r => ({
-            ...r._doc,
+        const { page, limit, search, status } = req.query;
+
+        const query = {};
+        if (status) query.status = status;
+        if (search) {
+            query.feedback = { $regex: search, $options: "i" };
+        }
+
+        const paginationResult = await paginate(RatingFeedback, query, {
+            page,
+            limit,
+            populate: [
+                { path: "userId", select: "name email" },
+                { path: "venueId", select: "name" }
+            ],
+            sort: { createdAt: -1 }
+        });
+
+        paginationResult.data = paginationResult.data.map(r => ({
+            ...r,
             venueId: r.venueId?._id,
             venueName: r.venueId?.name
         }));
         
-        // Sort by newest first
-        allReviews.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
-        res.json(allReviews);
+        res.json(paginationResult);
     } catch(err) {
         res.status(500).json({ message: err.message });
     }

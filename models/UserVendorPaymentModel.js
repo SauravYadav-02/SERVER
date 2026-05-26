@@ -2,34 +2,35 @@ import mongoose from "mongoose";
 
 const userVendorPaymentSchema = new mongoose.Schema(
   {
+    bookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
+      required: true,
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    userName: { type: String, required: true },
-    userEmail: { type: String, required: true },
-    
+    userName: { type: String },
+    userEmail: { type: String },
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Vendor",
       required: true,
     },
-    vendorName: { type: String, required: true },
-    vendorEmail: { type: String, required: true },
-    
+    vendorName: { type: String },
+    vendorEmail: { type: String },
+    venueId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Venue",
+    },
     adminId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Admin",
       default: null,
     },
     adminName: { type: String, default: "" },
-
-    bookingId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Booking",
-      required: true,
-    },
     amount: {
       type: Number,
       required: true,
@@ -53,12 +54,18 @@ const userVendorPaymentSchema = new mongoose.Schema(
       default: "",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    collection: "uservendorpayments",
+  }
 );
 
-// Index for efficient queries
+// Indexes
+userVendorPaymentSchema.index({ userId: 1 });
+userVendorPaymentSchema.index({ vendorId: 1 });
+userVendorPaymentSchema.index({ bookingId: 1 });
+userVendorPaymentSchema.index({ transactionId: 1 });
 userVendorPaymentSchema.index({ vendorId: 1, paymentTimestamp: -1 });
 userVendorPaymentSchema.index({ userId: 1, paymentTimestamp: -1 });
-userVendorPaymentSchema.index({ bookingId: 1 });
 
 export default mongoose.model("UserVendorPayment", userVendorPaymentSchema);
