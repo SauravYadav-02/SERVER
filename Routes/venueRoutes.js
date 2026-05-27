@@ -7,6 +7,7 @@ import venueUpload from "../middleare/venueUpload.js";
 import fs from "fs/promises";
 import { getVendorSubscriptionStatus, handleExpiry } from "../services/subscriptionService.js";
 import { paginate } from "../utils/pagination.js";
+import RatingFeedback from "../models/RatingFeedbackModel.js";
 
 const router = express.Router();
 
@@ -32,8 +33,6 @@ const filterVisibleVenues = async (venues) => {
     return venue.status === "approved";
   });
 };
-
-import RatingFeedback from "../models/RatingFeedbackModel.js";
 
 // Helper to attach rating stats to an array of venues
 const attachRatingStats = async (venues) => {
@@ -142,44 +141,24 @@ router.get("/discover", async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 9));
     const skip  = (page - 1) * limit;
 
-<<<<<<< HEAD
     const { search, city, category, minPrice, maxPrice, capacity, sort } = req.query;
-=======
-    const { search, city, category, minPrice, maxPrice, capacity, sort, amenities } = req.query;
->>>>>>> 9af5a9380efd225e5ddc67591144fd18d6443554
 
     // ── Build Mongoose filter object ──────────────────────────
     // Start with the required base conditions
     const andConditions = [
       { status: "approved" },
-<<<<<<< HEAD
       { isSubscriptionActive: true },
     ];
 
     // Full-text search: regex across name, description, city, type
-=======
-      // { isSubscriptionActive: true },
-    ];
-
-    // Full-text search: regex across name, description, city, type, venueTypes, eventsSupported
->>>>>>> 9af5a9380efd225e5ddc67591144fd18d6443554
     if (search && search.trim()) {
       const regex = new RegExp(search.trim(), "i");
       andConditions.push({
         $or: [
-<<<<<<< HEAD
           { name:        regex },
           { description: regex },
           { city:        regex },
           { type:        regex },
-=======
-          { name:            regex },
-          { description:     regex },
-          { city:            regex },
-          { type:            regex },
-          { venueTypes:      regex },
-          { eventsSupported: regex },
->>>>>>> 9af5a9380efd225e5ddc67591144fd18d6443554
         ],
       });
     }
@@ -189,42 +168,9 @@ router.get("/discover", async (req, res) => {
       andConditions.push({ city: new RegExp(city.trim(), "i") });
     }
 
-<<<<<<< HEAD
-
     // Venue type/category filter
     if (category && category.trim()) {
       andConditions.push({ type: new RegExp(category.trim(), "i") });
-
-=======
->>>>>>> 9af5a9380efd225e5ddc67591144fd18d6443554
-    // Venue type/category filter (checks both type and venueTypes array)
-    if (category && category.trim() && category.trim().toLowerCase() !== "all") {
-      const categoriesArray = category.split(',').map(c => new RegExp(c.trim(), "i"));
-      if (categoriesArray.length > 0) {
-        andConditions.push({
-          $or: [
-            { type: { $in: categoriesArray } },
-            { venueTypes: { $in: categoriesArray } }
-          ]
-        });
-      }
-    }
-
-    // Events Supported filter
-    const { events } = req.query;
-    if (events && events.trim()) {
-      const eventsArray = events.split(',').map(e => new RegExp(e.trim(), "i"));
-      if (eventsArray.length > 0) {
-        andConditions.push({ eventsSupported: { $in: eventsArray } });
-      }
-    }
-
-    // Amenities filter
-    if (amenities) {
-      const amenitiesArray = amenities.split(',').map(a => new RegExp(a.trim(), "i"));
-      if (amenitiesArray.length > 0) {
-        andConditions.push({ amenities: { $all: amenitiesArray } });
-      }
     }
 
     // Price range filter
@@ -316,7 +262,25 @@ router.get("/", async (req, res) => {
 });
 
 
+// router.get("/", async (req, res) => {
+//   try {
+//     // Admin bypass: pass ?admin=true to see all venues regardless of subscription
+//     if (req.query.admin === "true") {
+//       const venues = await Venue.find().populate("reviews.userId", "name email");
+//       return res.json(venues);
+//     }
 
+//     // Optimized query: filter directly in DB for better performance
+//     const visibleVenues = await Venue.find({
+//       status: "approved",
+//       isSubscriptionActive: true
+//     }).populate("reviews.userId", "name email");
+
+//     res.json(visibleVenues);
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
 
 
@@ -499,7 +463,6 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
     if (!req.body.status) {
       updateData.status = "pending";
     }
-
 
     const updatedVenue = await Venue.findByIdAndUpdate(
       req.params.id,
