@@ -78,7 +78,7 @@ const inactiveWarning = (endDate, now = new Date()) => ({
 const getDocumentId = (value) => value?._id || value;
 
 const isBasePlan = (plan) => !plan.planType || plan.planType === "base";
-const isFullPaymentPlan = (plan) => plan.planType === "full payment";
+const isFullPaymentPlan = (plan) => plan.planType === "full payment" || plan.planType === "addon";
 
 const getActivePlan = async (planId) => {
   const plan = await Plan.findOne({ _id: planId, is_active: true, deletedAt: null });

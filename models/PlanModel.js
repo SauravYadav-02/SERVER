@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 /**
  * PlanModel
  * Represents a subscription plan managed by Admin.
+ * Plans can be "base" (standalone) or "addon" (linked to a parent base plan).
  * Flexible enough to accommodate extra metadata via `features`.
  */
 const planSchema = new mongoose.Schema(
@@ -28,8 +29,16 @@ const planSchema = new mongoose.Schema(
 
     planType: {
       type: String,
-      enum: ["base", "full payment"],
+      enum: ["base", "addon", "full payment"],
       default: "base",
+    },
+
+    // ── Add-On relationship ─────────────────────────────────────
+    // Required when planType === "addon". Must reference a base plan.
+    parentPlanId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Plan",
+      default: null,
     },
 
     is_active: {
@@ -52,7 +61,8 @@ const planSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Only return non-deleted plans by default
+// ── Indexes ─────────────────────────────────────────────────────
 planSchema.index({ deletedAt: 1 });
+planSchema.index({ parentPlanId: 1 });
 
 export default mongoose.model("Plan", planSchema);
