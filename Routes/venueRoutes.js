@@ -142,44 +142,24 @@ router.get("/discover", async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 9));
     const skip  = (page - 1) * limit;
 
-<<<<<<< HEAD
     const { search, city, category, minPrice, maxPrice, capacity, sort } = req.query;
-=======
-    const { search, city, category, minPrice, maxPrice, capacity, sort, amenities } = req.query;
->>>>>>> 030be4de094951f4e27f268c7787a507fb5a3a24
 
     // ── Build Mongoose filter object ──────────────────────────
     // Start with the required base conditions
     const andConditions = [
       { status: "approved" },
-<<<<<<< HEAD
       { isSubscriptionActive: true },
     ];
 
     // Full-text search: regex across name, description, city, type
-=======
-      // { isSubscriptionActive: true },
-    ];
-
-    // Full-text search: regex across name, description, city, type, venueTypes, eventsSupported
->>>>>>> 030be4de094951f4e27f268c7787a507fb5a3a24
     if (search && search.trim()) {
       const regex = new RegExp(search.trim(), "i");
       andConditions.push({
         $or: [
-<<<<<<< HEAD
           { name:        regex },
           { description: regex },
           { city:        regex },
           { type:        regex },
-=======
-          { name:            regex },
-          { description:     regex },
-          { city:            regex },
-          { type:            regex },
-          { venueTypes:      regex },
-          { eventsSupported: regex },
->>>>>>> 030be4de094951f4e27f268c7787a507fb5a3a24
         ],
       });
     }
@@ -189,11 +169,11 @@ router.get("/discover", async (req, res) => {
       andConditions.push({ city: new RegExp(city.trim(), "i") });
     }
 
-<<<<<<< HEAD
+
     // Venue type/category filter
     if (category && category.trim()) {
       andConditions.push({ type: new RegExp(category.trim(), "i") });
-=======
+
     // Venue type/category filter (checks both type and venueTypes array)
     if (category && category.trim() && category.trim().toLowerCase() !== "all") {
       const categoriesArray = category.split(',').map(c => new RegExp(c.trim(), "i"));
@@ -314,25 +294,7 @@ router.get("/", async (req, res) => {
 });
 
 
-// router.get("/", async (req, res) => {
-//   try {
-//     // Admin bypass: pass ?admin=true to see all venues regardless of subscription
-//     if (req.query.admin === "true") {
-//       const venues = await Venue.find().populate("reviews.userId", "name email");
-//       return res.json(venues);
-//     }
 
-//     // Optimized query: filter directly in DB for better performance
-//     const visibleVenues = await Venue.find({
-//       status: "approved",
-//       isSubscriptionActive: true
-//     }).populate("reviews.userId", "name email");
-
-//     res.json(visibleVenues);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// });
 
 
 
