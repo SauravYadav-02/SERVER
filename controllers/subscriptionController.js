@@ -8,6 +8,7 @@ import {
   getSubscription,
   getVendorSubscriptionForAdmin,
 } from "../services/subscriptionService.js";
+import AddonSubscription from "../models/AddonSubscriptionModel.js";
 
 const sendError = (res, error) =>
   res.status(error.statusCode || 500).json({
@@ -139,6 +140,29 @@ export const assignFullPayment = async (req, res) => {
       adminId: req.adminId,
     });
     res.status(201).json({ success: true, ...result });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+export const getMyAddons = async (req, res) => {
+  try {
+    const addons = await AddonSubscription.find({ userId: req.vendorId })
+      .populate("addonId", "name price duration_days features planType")
+      .populate("baseSubscriptionId", "planId status startDate endDate");
+    res.json({ success: true, count: addons.length, addons });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+export const getAllAddonsForAdmin = async (req, res) => {
+  try {
+    const addons = await AddonSubscription.find()
+      .populate("userId", "fullName email businessName status")
+      .populate("addonId", "name price duration_days features planType")
+      .populate("baseSubscriptionId", "planId status startDate endDate");
+    res.json({ success: true, count: addons.length, addons });
   } catch (error) {
     sendError(res, error);
   }

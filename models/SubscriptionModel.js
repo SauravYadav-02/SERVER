@@ -46,6 +46,7 @@ const subscriptionSchema = new mongoose.Schema(
       ref: "Vendor",
       required: true,
       unique: true,
+      alias: "userId",
     },
     planId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -55,8 +56,8 @@ const subscriptionSchema = new mongoose.Schema(
     planSnapshot: planSnapshotSchema,
     status: {
       type: String,
-      enum: ["active", "grace", "expired"],
-      default: "active",
+      enum: ["ACTIVE", "SUSPENDED", "EXPIRED", "CANCELLED", "active", "grace", "expired"],
+      default: "ACTIVE",
     },
     startDate: {
       type: Date,
@@ -65,6 +66,7 @@ const subscriptionSchema = new mongoose.Schema(
     endDate: {
       type: Date,
       required: true,
+      alias: "expiryDate",
     },
     graceEndDate: {
       type: Date,
