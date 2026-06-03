@@ -9,11 +9,11 @@ const __dirname = path.dirname(__filename);
 // Storage config for user profile photos
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const dir = path.join(__dirname, "../uploads/users/");
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
+        const uploadPath = "uploads/users";
+        if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
         }
-        cb(null, dir);
+        cb(null, uploadPath);
     },
     filename: (req, file, cb) => {
         const uniqueName = Date.now() + "-" + Math.random().toString(36).substring(7) + path.extname(file.originalname);

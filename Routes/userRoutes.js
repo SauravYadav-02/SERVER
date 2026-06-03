@@ -12,7 +12,12 @@ const buildUserResponse = (user, req) => {
     const response = user.toObject ? user.toObject() : user;
 
     if (response.profilePhoto && !response.profilePhoto.startsWith("http")) {
-        response.profilePhoto = `${req.protocol}://${req.get("host")}/${fixPath(response.profilePhoto)}`;
+        let photoPath = fixPath(response.profilePhoto);
+        const idx = photoPath.indexOf("uploads/users/");
+        if (idx !== -1) {
+            photoPath = photoPath.substring(idx);
+        }
+        response.profilePhoto = `${req.protocol}://${req.get("host")}/${photoPath}`;
     }
 
     return response;
