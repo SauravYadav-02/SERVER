@@ -15,7 +15,8 @@ const addonSubscriptionSchema = new mongoose.Schema(
     baseSubscriptionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Subscription",
-      required: true,
+      required: false,
+      default: null,
     },
     status: {
       type: String,
