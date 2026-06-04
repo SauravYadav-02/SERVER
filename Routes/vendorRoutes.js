@@ -1,5 +1,6 @@
 import express from "express";
 import Vendor from "../models/VendorModel.js";
+import Venue from "../models/VenueModel.js";
 import { sendEmail } from "../utils/emailService.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 import upload from "../middleare/upload.js";
@@ -19,7 +20,7 @@ router.get("/", isAdmin, async (req, res) => {
     try {
         const { page, limit, search, status } = req.query;
 
-        const query = {};
+        const query = { deleted: { $ne: true } };
         if (status) query.status = status;
         if (search) {
             query.$or = [
@@ -60,7 +61,7 @@ const fixPath = (filePath) => filePath.replace(/\\/g, "/");
 
 router.get("/:id", async (req, res) => {
     try {
-        const vendor = await Vendor.findById(req.params.id);
+        const vendor = await Vendor.findOne({ _id: req.params.id, deleted: { $ne: true } });
 
         if (!vendor) {
             return res.status(404).json({ message: "Vendor not found" });
@@ -229,9 +230,65 @@ router.post("/login", async (req, res) => {
 
         res.status(200).json({ message: "Login success", vendor });
         console.log("Vendor logged in:", vendor.username);      
-
     } catch (err) {
-        res.status(500).json({ message: "Error" });
+        console.error("Login error:", err);
+        res.status(500).json({ message: "Error during login" });
+    }
+});
+
+// ============================
+// 🔹 Admin Suspend Vendor
+// ============================
+router.put("/suspend/:id", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const vendor = await Vendor.findOneAndUpdate(
+            { _id: id, deleted: { $ne: true } },
+            { status: "suspended" },
+            { new: true }
+        );
+
+        if (!vendor) {
+            return res.status(404).json({ message: "Vendor not found or deleted" });
+        }
+
+        // Hide all venues belonging to this vendor
+        await Venue.updateMany(
+            { vendorId: id },
+            { isSubscriptionActive: false }
+        );
+
+        res.json({ message: "Vendor suspended successfully", vendor });
+    } catch (err) {
+        res.status(500).json({ message: "Error suspending vendor", error: err.message });
+    }
+});
+
+// ============================
+// 🔹 Admin Soft-Delete Vendor
+// ============================
+router.delete("/:id", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const vendor = await Vendor.findOneAndUpdate(
+            { _id: id, deleted: { $ne: true } },
+            { deleted: true },
+            { new: true }
+        );
+
+        if (!vendor) {
+            return res.status(404).json({ message: "Vendor not found or already deleted" });
+        }
+
+        // Soft delete all venues belonging to this vendor
+        await Venue.updateMany(
+            { vendorId: id },
+            { deleted: true }
+        );
+
+        res.json({ message: "Vendor soft-deleted successfully", vendor });
+    } catch (err) {
+        res.status(500).json({ message: "Error deleting vendor", error: err.message });
     }
 });
 

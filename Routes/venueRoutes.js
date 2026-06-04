@@ -148,6 +148,7 @@ router.get("/discover", async (req, res) => {
     const andConditions = [
       { status: "approved" },
       { isSubscriptionActive: true },
+      { deleted: { $ne: true } },
     ];
 
     // Full-text search: regex across name, description, city, type
@@ -249,6 +250,7 @@ router.get("/", async (req, res) => {
     // Optimized query: filter directly in DB for better performance
     let visibleVenues = await Venue.find({
       status: "approved",
+      deleted: { $ne: true }
       // isSubscriptionActive: true
     })
       .populate("vendorId", "fullName email");
@@ -288,7 +290,7 @@ router.get("/", async (req, res) => {
 router.get("/vendor/:vendorId", async (req, res) => {
   try {
     const { page, limit, status } = req.query;
-    const query = { vendorId: req.params.vendorId };
+    const query = { vendorId: req.params.vendorId, deleted: { $ne: true } };
 
     // Admin/Owner bypass: if requesting user is the vendor themselves or an admin, show all
     const isOwner = req.query.ownerId === req.params.vendorId;
@@ -323,7 +325,7 @@ router.get("/vendor/:vendorId", async (req, res) => {
 // ✅ 4. GET Single Venue (Full Details — subscription-gated)
 router.get("/:id", async (req, res) => {
   try {
-    const venue = await Venue.findById(req.params.id);
+    const venue = await Venue.findOne({ _id: req.params.id, deleted: { $ne: true } });
 
     if (!venue) {
       return res.status(404).json({ message: "Venue not found" });
