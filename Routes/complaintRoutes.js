@@ -113,9 +113,9 @@ router.get("/:id", async (req, res) => {
         // Validate access permissions
         if (adminId) {
             // Admin OK
-        } else if (vendorId && String(complaint.vendor) === vendorId) {
+        } else if (vendorId && String(complaint.vendor?._id || complaint.vendor) === vendorId) {
             // Vendor OK
-        } else if (userId && String(complaint.user?._id) === userId) {
+        } else if (userId && String(complaint.user?._id || complaint.user) === userId) {
             // User OK
         } else {
             return res.status(403).json({ message: "Forbidden. You do not have access to this complaint." });
@@ -157,7 +157,7 @@ router.put("/:id/status", async (req, res) => {
         // Validate modification permissions
         if (adminId) {
             // Admin OK
-        } else if (vendorId && String(complaint.vendor) === vendorId) {
+        } else if (vendorId && String(complaint.vendor?._id || complaint.vendor) === vendorId) {
             // Vendor OK
         } else {
             return res.status(403).json({ message: "Forbidden. Cannot update status." });
@@ -209,9 +209,9 @@ router.get("/:id/messages", async (req, res) => {
         // Validate access permissions
         if (adminId) {
             // Admin OK
-        } else if (vendorId && String(complaint.vendor) === vendorId) {
+        } else if (vendorId && String(complaint.vendor?._id || complaint.vendor) === vendorId) {
             // Vendor OK
-        } else if (userId && String(complaint.user) === userId) {
+        } else if (userId && String(complaint.user?._id || complaint.user) === userId) {
             // User OK
         } else {
             return res.status(403).json({ message: "Forbidden" });
@@ -272,10 +272,10 @@ router.post("/:id/messages", async (req, res) => {
         if (adminId) {
             senderId = adminId;
             senderModel = "Admin";
-        } else if (vendorId && String(complaint.vendor) === vendorId) {
+        } else if (vendorId && String(complaint.vendor?._id || complaint.vendor) === vendorId) {
             senderId = vendorId;
             senderModel = "Vendor";
-        } else if (userId && String(complaint.user) === userId) {
+        } else if (userId && String(complaint.user?._id || complaint.user) === userId) {
             senderId = userId;
             senderModel = "User";
         } else {
