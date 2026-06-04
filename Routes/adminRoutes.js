@@ -4,6 +4,7 @@ import Venue from "../models/VenueModel.js";
 import RatingFeedback from "../models/RatingFeedbackModel.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 import { paginate } from "../utils/pagination.js";
+import { suspendVendor, unsuspendVendor } from "../services/vendorService.js";
 
 const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
 
@@ -142,7 +143,7 @@ router.patch("/reviews/:venueId/:reviewId/status", isAdmin, async (req, res) => 
     try {
         const { status } = req.body;
         const review = await RatingFeedback.findByIdAndUpdate(
-            req.params.reviewId,
+            { _id: req.params.reviewId },
             { status },
             { new: true }
         );
@@ -152,6 +153,38 @@ router.patch("/reviews/:venueId/:reviewId/status", isAdmin, async (req, res) => 
         res.json({ message: "Review status updated", review });
     } catch(err) {
         res.status(500).json({ message: err.message });
+    }
+});
+
+// Admin: Suspend Vendor
+router.put("/vendors/:id/suspend", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const vendor = await suspendVendor(id);
+        res.json({ message: "Vendor suspended successfully", vendor });
+    } catch (err) {
+        if (err.message === "Vendor not found or deleted") {
+            return res.status(404).json({ message: err.message });
+        }
+        res.status(500).json({ message: "Error suspending vendor", error: err.message });
+    }
+});
+
+// Admin: Unsuspend Vendor
+router.put("/vendors/:id/unsuspend", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { vendor, activeSubscriptionExists } = await unsuspendVendor(id);
+        res.json({ 
+            message: "Vendor unsuspended successfully", 
+            vendor,
+            activeSubscriptionExists 
+        });
+    } catch (err) {
+        if (err.message === "Vendor not found or deleted") {
+            return res.status(404).json({ message: err.message });
+        }
+        res.status(500).json({ message: "Error unsuspending vendor", error: err.message });
     }
 });
 

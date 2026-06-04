@@ -4,6 +4,7 @@ import Venue from "../models/VenueModel.js";
 import { sendEmail } from "../utils/emailService.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 import upload from "../middleare/upload.js";
+import { suspendVendor, unsuspendVendor } from "../services/vendorService.js";
 
 import { paginate } from "../utils/pagination.js";
 
@@ -242,25 +243,30 @@ router.post("/login", async (req, res) => {
 router.put("/suspend/:id", isAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const vendor = await Vendor.findOneAndUpdate(
-            { _id: id, deleted: { $ne: true } },
-            { status: "suspended" },
-            { new: true }
-        );
-
-        if (!vendor) {
-            return res.status(404).json({ message: "Vendor not found or deleted" });
-        }
-
-        // Hide all venues belonging to this vendor
-        await Venue.updateMany(
-            { vendorId: id },
-            { isSubscriptionActive: false }
-        );
-
+        const vendor = await suspendVendor(id);
         res.json({ message: "Vendor suspended successfully", vendor });
     } catch (err) {
         res.status(500).json({ message: "Error suspending vendor", error: err.message });
+    }
+});
+
+// ============================
+// 🔹 Admin Unsuspend Vendor
+// ============================
+router.put("/unsuspend/:id", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { vendor, activeSubscriptionExists } = await unsuspendVendor(id);
+        res.json({ 
+            message: "Vendor unsuspended successfully", 
+            vendor,
+            activeSubscriptionExists 
+        });
+    } catch (err) {
+        if (err.message === "Vendor not found or deleted") {
+            return res.status(404).json({ message: err.message });
+        }
+        res.status(500).json({ message: "Error unsuspending vendor", error: err.message });
     }
 });
 
