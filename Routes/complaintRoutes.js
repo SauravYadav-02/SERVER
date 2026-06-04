@@ -145,7 +145,7 @@ router.put("/:id/status", async (req, res) => {
             return res.status(401).json({ message: "Unauthorized" });
         }
 
-        if (!["Open", "In Progress", "Resolved", "Closed"].includes(status)) {
+        if (!["Open", "In Progress", "Resolved", "Closed", "Rejected"].includes(status)) {
             return res.status(400).json({ message: "Invalid status value" });
         }
 
@@ -159,6 +159,9 @@ router.put("/:id/status", async (req, res) => {
             // Admin OK
         } else if (vendorId && String(complaint.vendor?._id || complaint.vendor) === vendorId) {
             // Vendor OK
+            if (status === "Rejected") {
+                return res.status(403).json({ message: "Forbidden. Only administrators can reject complaints." });
+            }
         } else {
             return res.status(403).json({ message: "Forbidden. Cannot update status." });
         }
