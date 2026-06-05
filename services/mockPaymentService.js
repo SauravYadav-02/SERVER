@@ -98,7 +98,7 @@ export const createBookingWithUpfrontPayment = async (payload) => {
   const [user, vendor, venue] = await Promise.all([
     User.findById(userId).select("_id"),
     Vendor.findById(vendorId).select("_id"),
-    Venue.findById(venueId).select("_id vendorId isSubscriptionActive availableFrom pricePerDay vegPrice nonVegPrice"),
+    Venue.findById(venueId).select("_id vendorId isSubscriptionActive availableFrom pricePerDay vegPrice nonVegPrice capacity"),
   ]);
 
   if (!user) {
@@ -120,6 +120,11 @@ export const createBookingWithUpfrontPayment = async (payload) => {
   // Also check the flag on the venue itself (cached status)
   if (!venue.isSubscriptionActive) {
     throw createError("Venue is not available for booking yet.", 403);
+  }
+
+  const guests = Math.max(0, Number(guestCount || 0));
+  if (venue.capacity !== undefined && venue.capacity !== null && guests > venue.capacity) {
+    throw createError("The selected venue cannot accommodate the number of guests", 400);
   }
 
   if (venue.availableFrom) {
@@ -145,7 +150,6 @@ export const createBookingWithUpfrontPayment = async (payload) => {
 
   // Food calculation
   const foodType = String(selectedFoodType || "none").toLowerCase();
-  const guests = Math.max(0, Number(guestCount || 0));
   let perPlatePrice = 0;
   if (foodType === "veg") {
     perPlatePrice = venue.vegPrice || 0;

@@ -33,25 +33,6 @@ const validatePlanBody = (body) => {
 // Add-on validation helper
 // ─────────────────────────────────────────────────────────────
 const validateAddonRelationship = async (planType, parentPlanId) => {
-  if (planType === "addon" || planType === "full payment") {
-    if (parentPlanId) {
-      if (!mongoose.Types.ObjectId.isValid(parentPlanId)) {
-        return "parentPlanId must be a valid MongoDB ObjectId.";
-      }
-      const parentPlan = await Plan.findOne({ _id: parentPlanId, deletedAt: null });
-      if (!parentPlan) {
-        return "parentPlanId references a non-existent or deleted plan.";
-      }
-      if (parentPlan.planType === "addon" || parentPlan.planType === "full payment") {
-        return "Add-on plans cannot reference another add-on plan. parentPlanId must reference a base plan.";
-      }
-    }
-  }
-
-  if (planType === "base" && parentPlanId) {
-    return "Base plans cannot have a parentPlanId. Remove parentPlanId or set planType to \"addon\" or \"full payment\".";
-  }
-
   return null;
 };
 

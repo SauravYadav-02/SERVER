@@ -26,21 +26,5 @@ export const isAddonAvailable = async (vendorId, addonSubscription) => {
   // Add-on must not be expired
   const isAddonNotExpired = addonSubscription.expiryDate && new Date(addonSubscription.expiryDate) > now;
 
-  if (!isAddonActive || !isAddonNotExpired) {
-    return false;
-  }
-
-  try {
-    // Check if the vendor has at least one ACTIVE, non-expired Base Plan
-    const activeBase = await Subscription.findOne({
-      vendorId,
-      status: { $in: ["active", "ACTIVE"] },
-      endDate: { $gt: now },
-    });
-
-    return !!activeBase;
-  } catch (err) {
-    console.error("Error in isAddonAvailable checking active base plan:", err);
-    return false;
-  }
+  return isAddonActive && isAddonNotExpired;
 };

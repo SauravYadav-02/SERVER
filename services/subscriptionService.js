@@ -161,7 +161,8 @@ const syncSubscriptionStatus = async (sub) => {
   if (changed) {
     await sub.save();
 
-    // If base plan status is no longer ACTIVE, suspend active add-ons ONLY if the user has no other active base plans
+    // Universal Add-on: Decoupled suspension (Do not suspend active add-ons when base plan status changes)
+    /*
     const normalizedStatus = String(sub.status).toUpperCase();
     if (normalizedStatus === "SUSPENDED" || normalizedStatus === "EXPIRED" || normalizedStatus === "CANCELLED") {
       try {
@@ -182,6 +183,7 @@ const syncSubscriptionStatus = async (sub) => {
         console.error("Failed to suspend linked add-ons:", addonErr.message);
       }
     }
+    */
   }
 
   if (shouldDeactivateVenues) {
@@ -444,16 +446,10 @@ export const fullPaymentSubscription = async (
     throw createError(400, "Plan must be a full-payment plan.");
   }
 
-  // Check if they have at least one active base subscription currently
+  // Universal Add-on: active base plan check bypassed
   const now = new Date();
-  const activeBase = await Subscription.findOne({
-    vendorId,
-    status: { $in: ["active", "ACTIVE"] },
-    endDate: { $gt: now },
-  });
-
-  const initialStatus = activeBase ? "ACTIVE" : "SUSPENDED";
-  const suspensionReason = activeBase ? null : "No active Base Plan";
+  const initialStatus = "ACTIVE";
+  const suspensionReason = null;
 
   const { startDate: sd, endDate: ed } = buildDates(startDate, plan.duration_days, endDate);
 
@@ -466,11 +462,11 @@ export const fullPaymentSubscription = async (
     throw createError(404, "Vendor not found.");
   }
 
-  // Create the AddonSubscription document (baseSubscriptionId references active base plan or null)
+  // Create the AddonSubscription document (Universal Add-on is independent of base subscription)
   const addonSub = await AddonSubscription.create({
     userId: vendorId,
     addonId: plan._id,
-    baseSubscriptionId: activeBase ? activeBase._id : null,
+    baseSubscriptionId: null,
     status: initialStatus,
     startDate: sd,
     expiryDate: ed,
@@ -663,7 +659,8 @@ export const handleExpiry = async () => {
       await sub.save();
       console.log(`[Cron] Vendor ${sub.vendorId} moved to SUSPENDED status.`);
       
-      // Cascade suspension to linked active add-ons only if no other active base plans
+      // Universal Add-on: Decoupled suspension (Do not suspend active add-ons)
+      /*
       try {
         const otherActiveBase = await Subscription.findOne({
           vendorId: sub.vendorId,
@@ -681,6 +678,7 @@ export const handleExpiry = async () => {
       } catch (addonErr) {
         console.error("Failed to suspend linked add-ons:", addonErr.message);
       }
+      */
     }
     processed++;
   }
@@ -701,7 +699,8 @@ export const handleExpiry = async () => {
       const result = await Venue.updateMany({ vendorId: sub.vendorId }, { isSubscriptionActive: false });
       console.log(`[Cron] Vendor ${sub.vendorId} expired. ${result.modifiedCount} venues hidden.`);
       
-      // Cascade suspension to linked active add-ons only if no other active base plans
+      // Universal Add-on: Decoupled suspension (Do not suspend active add-ons)
+      /*
       try {
         const otherActiveBase = await Subscription.findOne({
           vendorId: sub.vendorId,
@@ -719,6 +718,7 @@ export const handleExpiry = async () => {
       } catch (addonErr) {
         console.error("Failed to suspend linked add-ons:", addonErr.message);
       }
+      */
     }
 
     processed++;

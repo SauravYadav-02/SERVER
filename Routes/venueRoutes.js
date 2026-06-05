@@ -147,7 +147,6 @@ router.get("/discover", async (req, res) => {
     // Start with the required base conditions
     const andConditions = [
       { status: "approved" },
-      { isSubscriptionActive: true },
       { deleted: { $ne: true } },
     ];
 
