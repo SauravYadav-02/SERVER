@@ -34,10 +34,11 @@ const planSchema = new mongoose.Schema(
     },
 
     // ── Add-On relationship ─────────────────────────────────────
-    // Required when planType === "addon". Must reference a base plan.
+    // Optional. References a base plan if linked, or null if universal.
     parentPlanId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Plan",
+      required: false,
       default: null,
     },
 

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Subscription from "../models/SubscriptionModel.js";
 
 /**
@@ -6,7 +7,7 @@ import Subscription from "../models/SubscriptionModel.js";
  * Under the Universal Add-on rules:
  * 1. Add-on Status = Active (ACTIVE)
  * 2. Add-on Not Expired (expiryDate > now)
- * 3. User has at least one ACTIVE Base Plan not expired.
+ * 3. If linked to a parent plan, the user must have at least one ACTIVE Base Plan not expired.
  * 
  * @param {String} vendorId - The ID of the vendor/user
  * @param {Object} addonSubscription - The Add-on Subscription document
@@ -26,5 +27,32 @@ export const isAddonAvailable = async (vendorId, addonSubscription) => {
   // Add-on must not be expired
   const isAddonNotExpired = addonSubscription.expiryDate && new Date(addonSubscription.expiryDate) > now;
 
-  return isAddonActive && isAddonNotExpired;
+  if (!isAddonActive || !isAddonNotExpired) {
+    return false;
+  }
+
+  try {
+    // Fetch plan to see if it is linked to a parent base plan
+    let addonPlan = addonSubscription.addonId;
+    if (!addonPlan || typeof addonPlan !== "object" || !addonPlan.planType) {
+      const Plan = mongoose.model("Plan");
+      addonPlan = await Plan.findById(addonSubscription.addonId);
+    }
+
+    if (addonPlan && addonPlan.parentPlanId) {
+      // Linked add-on requires at least one active base subscription
+      const activeBase = await Subscription.findOne({
+        vendorId,
+        status: { $in: ["active", "ACTIVE"] },
+        endDate: { $gt: now },
+      });
+      return !!activeBase;
+    }
+  } catch (err) {
+    console.error("Error in isAddonAvailable checking active base plan:", err);
+    return false;
+  }
+
+  // Universal add-ons are available directly as long as they are active and not expired
+  return true;
 };
