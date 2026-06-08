@@ -7,7 +7,7 @@ import UserVendorPayment from "../models/UserVendorPaymentModel.js";
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 const TRANSACTION_TYPES = ["booking", "subscription", "full payment"];
-const PAYMENT_STATUSES = ["pending", "success", "failed"];
+const PAYMENT_STATUSES = ["pending", "success", "failed", "cancelled"];
 const ADMIN_VENDOR_TYPES = ["subscription", "full payment"];
 
 const VENDOR_SELECT = "fullName email phone businessName businessType address state pincode status";
