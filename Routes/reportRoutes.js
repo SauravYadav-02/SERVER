@@ -5,6 +5,7 @@ import Venue from "../models/VenueModel.js";
 import reportUpload from "../middleare/reportUpload.js";
 import { isUser } from "../middleare/isUser.js";
 import { isAdmin } from "../middleare/isAdmin.js";
+import { isVendor } from "../middleare/isVendor.js";
 
 const router = express.Router();
 
@@ -93,6 +94,28 @@ router.get("/", async (req, res) => {
         res.json(formattedReports);
     } catch (error) {
         res.status(500).json({ message: "Failed to retrieve reports", error: error.message });
+    }
+});
+
+// 2.5. Get Reports for Vendor's own venues
+router.get("/vendor", isVendor, async (req, res) => {
+    try {
+        const vendorId = req.vendorId;
+
+        // Fetch all venues owned by this vendor
+        const venues = await Venue.find({ vendorId }, "_id");
+        const venueIds = venues.map(v => v._id);
+
+        const reports = await Report.find({ venue: { $in: venueIds } })
+            .populate("user", "name email phone")
+            .populate("venue", "name city")
+            .sort({ createdAt: -1 });
+
+        const formattedReports = reports.map(report => formatAttachments(report, req));
+        res.json(formattedReports);
+    } catch (error) {
+        console.error("VENDOR REPORT GET ERROR:", error);
+        res.status(500).json({ message: "Failed to retrieve reports for vendor", error: error.message });
     }
 });
 
