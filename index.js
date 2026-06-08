@@ -21,6 +21,7 @@ import paymentHistoryRoutes from "./Routes/paymentHistoryRoutes.js";
 import termsRoutes from "./Routes/termsRoutes.js";
 import complaintRoutes from "./Routes/complaintRoutes.js";
 import reportRoutes from "./Routes/reportRoutes.js";
+import todoRoutes from "./Routes/todoRoutes.js";
 
 import { registerSubscriptionCronJobs } from "./jobs/subscriptionCron.js";
 
@@ -50,6 +51,7 @@ app.use("/", mockPaymentRoutes);
 app.use("/terms", termsRoutes);
 app.use("/complaints", complaintRoutes);
 app.use("/reports", reportRoutes);
+app.use("/todos", todoRoutes);
 
 // ── Subscription System ─────────────────────────────────────
 app.use("/plans", planRoutes);           // Admin CRUD + public GET
