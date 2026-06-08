@@ -78,7 +78,7 @@ router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
       });
     }
 
-    const imagePaths = req.files?.map((file) => file.path);
+    const imagePaths = req.files?.map((file) => file.path.replace(/\\/g, "/"));
     const { reviews, averageRating, ratingCount, ...venueData } = req.body;
 
     let venueTypes = [];
@@ -413,7 +413,7 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
         })
       );
       // Get newly uploaded image paths
-      const newImagePaths = req.files ? req.files.map((file) => file.path) : [];
+      const newImagePaths = req.files ? req.files.map((file) => file.path.replace(/\\/g, "/")) : [];
 
       // Final list of images
       imagePaths = [...keptImages, ...newImagePaths];

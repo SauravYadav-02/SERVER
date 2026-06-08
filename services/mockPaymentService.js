@@ -7,7 +7,7 @@ import { createPaymentHistory } from "./paymentHistoryService.js";
 import UserVendorPayment from "../models/UserVendorPaymentModel.js";
 import { getVendorSubscriptionStatus } from "./subscriptionService.js";
 
-const VALID_PAYMENT_OUTCOMES = ["success", "failure", "failed"];
+const VALID_PAYMENT_OUTCOMES = ["success", "failure", "failed", "cancelled"];
 
 const toMoney = (value) => Number(Number(value).toFixed(2));
 
@@ -52,10 +52,12 @@ const normalizePaymentOutcome = (outcome) => {
 
   const normalizedOutcome = String(outcome).trim().toLowerCase();
   if (!VALID_PAYMENT_OUTCOMES.includes(normalizedOutcome)) {
-    throw createError("payment outcome must be either 'success' or 'failure'");
+    throw createError("payment outcome must be either 'success', 'failure', or 'cancelled'");
   }
 
-  return normalizedOutcome === "success" ? "success" : "failed";
+  if (normalizedOutcome === "success") return "success";
+  if (normalizedOutcome === "cancelled") return "cancelled";
+  return "failed";
 };
 
 export const calculateUpfrontPayment = (totalBookingAmount) => {
@@ -231,15 +233,27 @@ export const simulatePayment = async ({ bookingId, outcome, status, paymentStatu
   booking.totalBookingAmount = booking.totalBookingAmount || booking.cost;
   booking.upfrontPaymentAmount = upfrontPaymentAmount;
   booking.paymentStatus = simulatedPaymentStatus;
-  booking.status = simulatedPaymentStatus === "success" ? "success" : "failed";
+  booking.status = simulatedPaymentStatus === "success" ? "success" : (simulatedPaymentStatus === "cancelled" ? "cancelled" : "failed");
   booking.transactionId = transactionId;
   booking.paymentTimestamp = paymentTimestamp;
   booking.amountPaid = simulatedPaymentStatus === "success" ? upfrontPaymentAmount : 0;
 
   await booking.save();
 
-  // Transaction storage is handled by the root service or needs to be added here if this is active.
-  // For now, removing the duplicate PaymentHistory storage as requested.
+  try {
+    await createPaymentHistory({
+      vendorId: booking.vendorId,
+      userId: booking.userId,
+      type: "booking",
+      relatedId: booking._id,
+      amount: booking.upfrontPaymentAmount,
+      paymentStatus: simulatedPaymentStatus,
+      transactionId: booking.transactionId,
+      description: `Upfront payment for venue booking on ${booking.date}`,
+    });
+  } catch (err) {
+    console.error("Failed to create payment history for booking:", err.message);
+  }
   
   return booking;
 };
