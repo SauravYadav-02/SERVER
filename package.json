@@ -24,5 +24,13 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SauravYadav-02/SERVER.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SauravYadav-02/SERVER/issues"
+  },
+  "homepage": "https://github.com/SauravYadav-02/SERVER#readme"
 }

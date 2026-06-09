@@ -368,6 +368,17 @@ router.get("/:id", async (req, res) => {
 
 
 
+// Helper to normalize full URLs or backslashed paths to relative paths starting with 'uploads/'
+const normalizeToRelativePath = (item) => {
+  if (typeof item !== "string") return item;
+  let normalized = item.replace(/\\/g, "/");
+  const idx = normalized.indexOf("uploads/");
+  if (idx !== -1) {
+    normalized = normalized.slice(idx);
+  }
+  return normalized;
+};
+
 // ✅ 5. UPDATE Venue (with optional new images)
 router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
   try {
@@ -399,14 +410,21 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
         keptImages = [keptImages];
       }
 
-      // Identify images that were removed by the user
-      const imagesToDelete = venue.mediaFiles.filter((oldFile) => !keptImages.includes(oldFile));
+      // Normalize kept images to relative paths
+      const keptRelative = keptImages.map(normalizeToRelativePath);
+
+      // Identify images that were removed by the user (comparing normalized paths)
+      const imagesToDelete = venue.mediaFiles.filter((oldFile) => {
+        const relativeOld = normalizeToRelativePath(oldFile);
+        return !keptRelative.includes(relativeOld);
+      });
 
       // Delete removed images from disk
       await Promise.all(
         imagesToDelete.map(async (file) => {
           try {
-            await fs.unlink(file);
+            const relativePath = normalizeToRelativePath(file);
+            await fs.unlink(relativePath);
           } catch {
             // ignore error if file doesn't exist
           }
@@ -416,7 +434,7 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
       const newImagePaths = req.files ? req.files.map((file) => file.path.replace(/\\/g, "/")) : [];
 
       // Final list of images
-      imagePaths = [...keptImages, ...newImagePaths];
+      imagePaths = [...keptRelative, ...newImagePaths];
     }
 
     const updateData = {
@@ -500,7 +518,8 @@ router.delete("/:id", async (req, res) => {
     await Promise.all(
       venue.mediaFiles.map(async (file) => {
         try {
-          await fs.unlink(file);
+          const relativePath = normalizeToRelativePath(file);
+          await fs.unlink(relativePath);
         } catch {
           // ignore error if file doesn't exist
         }
