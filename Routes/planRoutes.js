@@ -31,14 +31,16 @@ const validatePlanBody = (body) => {
 
 // ─────────────────────────────────────────────────────────────
 const validateAddonRelationship = async (planType, parentPlanId) => {
+  const cleanParentPlanId = (parentPlanId === "None" || parentPlanId === "null" || parentPlanId === "" || parentPlanId === "undefined") ? null : parentPlanId;
+
   if (planType === "addon" || planType === "full payment") {
     // parentPlanId is optional – only validate when supplied
-    if (parentPlanId) {
-      if (!mongoose.Types.ObjectId.isValid(parentPlanId)) {
+    if (cleanParentPlanId) {
+      if (!mongoose.Types.ObjectId.isValid(cleanParentPlanId)) {
         return "parentPlanId must be a valid MongoDB ObjectId.";
       }
       const parentPlan = await Plan.findOne({
-        _id: parentPlanId,
+        _id: cleanParentPlanId,
         is_active: true,
         deletedAt: null,
         planType: "base",
@@ -47,7 +49,7 @@ const validateAddonRelationship = async (planType, parentPlanId) => {
     }
   }
 
-  if (planType === "base" && parentPlanId) {
+  if (planType === "base" && cleanParentPlanId) {
     return "Base plans cannot have a parentPlanId. Remove parentPlanId or set planType to \"addon\" or \"full payment\".";
   }
 
@@ -140,8 +142,10 @@ router.post("/", isAdmin, async (req, res) => {
 
     const { name, duration_days, price, planType, parentPlanId, is_active, features } = req.body;
 
+    const cleanParentPlanId = (parentPlanId === "None" || parentPlanId === "null" || parentPlanId === "" || parentPlanId === "undefined") ? null : parentPlanId;
+
     // ── Add-on relationship validation ──────────────────────────
-    const addonError = await validateAddonRelationship(planType, parentPlanId);
+    const addonError = await validateAddonRelationship(planType, cleanParentPlanId);
     if (addonError) {
       return res.status(400).json({ success: false, message: addonError });
     }
@@ -157,7 +161,7 @@ router.post("/", isAdmin, async (req, res) => {
       duration_days: Number(duration_days),
       price: Number(price),
       planType: planType || "base",
-      parentPlanId: (planType === "addon" || planType === "full payment") ? (parentPlanId ?? null) : null,
+      parentPlanId: (planType === "addon" || planType === "full payment") ? (cleanParentPlanId ?? null) : null,
       is_active: is_active !== undefined ? Boolean(is_active) : true,
       features: Array.isArray(features) ? features : [],
     });
@@ -214,7 +218,8 @@ router.put("/:id", isAdmin, async (req, res) => {
     // ── Add-on relationship validation on update ────────────────
     // Determine the final planType and parentPlanId after this update
     const finalPlanType = planType !== undefined ? planType : plan.planType;
-    const finalParentPlanId = parentPlanId !== undefined ? parentPlanId : plan.parentPlanId;
+    const rawParentPlanId = parentPlanId !== undefined ? parentPlanId : plan.parentPlanId;
+    const finalParentPlanId = (rawParentPlanId === "None" || rawParentPlanId === "null" || rawParentPlanId === "" || rawParentPlanId === "undefined") ? null : rawParentPlanId;
 
     const addonError = await validateAddonRelationship(finalPlanType, finalParentPlanId);
     if (addonError) {
@@ -223,7 +228,7 @@ router.put("/:id", isAdmin, async (req, res) => {
 
     // Apply parentPlanId
     if (parentPlanId !== undefined) {
-      plan.parentPlanId = (finalPlanType === "addon" || finalPlanType === "full payment") ? (parentPlanId ?? null) : null;
+      plan.parentPlanId = (finalPlanType === "addon" || finalPlanType === "full payment") ? (finalParentPlanId ?? null) : null;
     }
     // If planType changed to base, clear parentPlanId
     if (planType === "base") {
