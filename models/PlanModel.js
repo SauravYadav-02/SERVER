@@ -42,6 +42,18 @@ const planSchema = new mongoose.Schema(
       default: null,
     },
 
+    maxVenues: {
+      type: Number,
+      default: 0,
+      min: [0, "maxVenues cannot be negative"],
+    },
+
+    maxPhotos: {
+      type: Number,
+      default: 0,
+      min: [0, "maxPhotos cannot be negative"],
+    },
+
     is_active: {
       type: Boolean,
       default: true,

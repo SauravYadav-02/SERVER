@@ -7,6 +7,7 @@ import {
   getQueue,
   getSubscription,
   getVendorSubscriptionForAdmin,
+  getAggregatedPlanLimits,
 } from "../services/subscriptionService.js";
 import AddonSubscription from "../models/AddonSubscriptionModel.js";
 
@@ -49,7 +50,8 @@ export const confirmSubscriptionPaymentIntent = async (req, res) => {
 export const getMySubscription = async (req, res) => {
   try {
     const subscription = await getSubscription(req.vendorId);
-    res.json({ success: true, subscription });
+    const planLimits = await getAggregatedPlanLimits(req.vendorId);
+    res.json({ success: true, subscription, planLimits });
   } catch (error) {
     sendError(res, error);
   }

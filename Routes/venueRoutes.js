@@ -67,7 +67,7 @@ const attachRatingStats = async (venues) => {
 };
 
 // ✅ Create Venue (with images)
-router.post("/add", venueUpload.array("mediaFiles", 10), checkSubscription, async (req, res) => {
+router.post("/add", venueUpload.array("mediaFiles", 50), checkSubscription, async (req, res) => {
   try {
     const { vendorId } = req.body;
     
@@ -82,8 +82,34 @@ router.post("/add", venueUpload.array("mediaFiles", 10), checkSubscription, asyn
     // ✅ Limit check: Ensure vendor has not exceeded maximum venues allowed by their plan
     const activeVenuesCount = await Venue.countDocuments({ vendorId, deleted: { $ne: true } });
     if (req.planLimits && activeVenuesCount >= req.planLimits.maxVenues) {
+      if (req.files && req.files.length > 0) {
+        await Promise.all(
+          req.files.map(async (file) => {
+            try {
+              await fs.unlink(file.path);
+            } catch (e) {}
+          })
+        );
+      }
       return res.status(403).json({
         message: `Action forbidden: You have reached the maximum number of venues (${req.planLimits.maxVenues}) allowed for your plan.`
+      });
+    }
+
+    // ✅ Photo limit check: Ensure venue does not exceed maximum photos allowed per venue
+    const uploadedPhotosCount = req.files ? req.files.length : 0;
+    if (req.planLimits && uploadedPhotosCount > req.planLimits.maxPhotos) {
+      if (req.files && req.files.length > 0) {
+        await Promise.all(
+          req.files.map(async (file) => {
+            try {
+              await fs.unlink(file.path);
+            } catch (e) {}
+          })
+        );
+      }
+      return res.status(403).json({
+        message: `Action forbidden: You can upload a maximum of ${req.planLimits.maxPhotos} photos per venue on your current plan.`
       });
     }
 
@@ -374,9 +400,6 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-
-
-
 // Helper to normalize full URLs or backslashed paths to relative paths starting with 'uploads/'
 const normalizeToRelativePath = (item) => {
   if (typeof item !== "string") return item;
@@ -389,7 +412,7 @@ const normalizeToRelativePath = (item) => {
 };
 
 // ✅ 5. UPDATE Venue (with optional new images)
-router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
+router.put("/:id", venueUpload.array("mediaFiles", 50), checkSubscription, async (req, res) => {
   try {
     const venue = await Venue.findById(req.params.id);
 
@@ -403,7 +426,7 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
        return res.status(403).json({ 
          message: "Action forbidden: Your subscription has expired. Please renew to manage your venues." 
        });
-    }
+     }
 
     // ✅ Ownership check — only the venue's vendor can update it
     if (req.body.vendorId && venue.vendorId.toString() !== req.body.vendorId) {
@@ -422,6 +445,28 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
       // Normalize kept images to relative paths
       const keptRelative = keptImages.map(normalizeToRelativePath);
 
+      // Get newly uploaded image paths
+      const newImagePaths = req.files ? req.files.map((file) => file.path.replace(/\\/g, "/")) : [];
+
+      // Final list of images
+      imagePaths = [...keptRelative, ...newImagePaths];
+
+      // ✅ Photo limit check: Ensure venue does not exceed maximum photos allowed per venue
+      if (req.planLimits && imagePaths.length > req.planLimits.maxPhotos) {
+        if (req.files && req.files.length > 0) {
+          await Promise.all(
+            req.files.map(async (file) => {
+              try {
+                await fs.unlink(file.path);
+              } catch (e) {}
+            })
+          );
+        }
+        return res.status(403).json({
+          message: `Action forbidden: You can upload a maximum of ${req.planLimits.maxPhotos} photos per venue on your current plan.`
+        });
+      }
+
       // Identify images that were removed by the user (comparing normalized paths)
       const imagesToDelete = venue.mediaFiles.filter((oldFile) => {
         const relativeOld = normalizeToRelativePath(oldFile);
@@ -439,11 +484,6 @@ router.put("/:id", venueUpload.array("mediaFiles", 10), async (req, res) => {
           }
         })
       );
-      // Get newly uploaded image paths
-      const newImagePaths = req.files ? req.files.map((file) => file.path.replace(/\\/g, "/")) : [];
-
-      // Final list of images
-      imagePaths = [...keptRelative, ...newImagePaths];
     }
 
     const updateData = {

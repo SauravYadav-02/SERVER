@@ -11,7 +11,7 @@ const router = express.Router();
 // ─────────────────────────────────────────────────────────────
 const validatePlanBody = (body) => {
   const errors = [];
-  const { name, duration_days, price, planType } = body;
+  const { name, duration_days, price, planType, maxVenues, maxPhotos } = body;
 
   if (!name || typeof name !== "string" || name.trim() === "") {
     errors.push("name is required and must be a non-empty string.");
@@ -24,6 +24,12 @@ const validatePlanBody = (body) => {
   }
   if (planType !== undefined && !["base", "addon", "full payment"].includes(planType)) {
     errors.push('planType must be one of "base", "addon", or "full payment".');
+  }
+  if (maxVenues !== undefined && (isNaN(Number(maxVenues)) || Number(maxVenues) < 0)) {
+    errors.push("maxVenues must be a non-negative integer.");
+  }
+  if (maxPhotos !== undefined && (isNaN(Number(maxPhotos)) || Number(maxPhotos) < 0)) {
+    errors.push("maxPhotos must be a non-negative integer.");
   }
 
   return errors;
@@ -156,7 +162,7 @@ router.post("/", isAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: "Validation failed.", errors });
     }
 
-    const { name, duration_days, price, planType, parentPlanId, is_active, features } = req.body;
+    const { name, duration_days, price, planType, parentPlanId, is_active, features, maxVenues, maxPhotos } = req.body;
 
     const cleanParentPlanId = (parentPlanId === "None" || parentPlanId === "null" || parentPlanId === "" || parentPlanId === "undefined") ? null : parentPlanId;
 
@@ -180,6 +186,8 @@ router.post("/", isAdmin, async (req, res) => {
       parentPlanId: (planType === "addon" || planType === "full payment") ? (cleanParentPlanId ?? null) : null,
       is_active: is_active !== undefined ? Boolean(is_active) : true,
       features: Array.isArray(features) ? features : [],
+      maxVenues: maxVenues !== undefined ? Number(maxVenues) : 0,
+      maxPhotos: maxPhotos !== undefined ? Number(maxPhotos) : 0,
     });
 
     res.status(201).json({ success: true, message: "Plan created successfully.", plan });
@@ -206,7 +214,7 @@ router.put("/:id", isAdmin, async (req, res) => {
       }
     }
 
-    const { name, duration_days, price, planType, parentPlanId, is_active, features } = req.body;
+    const { name, duration_days, price, planType, parentPlanId, is_active, features, maxVenues, maxPhotos } = req.body;
 
     // Only update provided fields
     if (name !== undefined) {
@@ -237,6 +245,18 @@ router.put("/:id", isAdmin, async (req, res) => {
         return res.status(400).json({ success: false, message: 'planType must be one of "base", "addon", or "full payment".' });
       }
       plan.planType = planType;
+    }
+    if (maxVenues !== undefined) {
+      if (isNaN(Number(maxVenues)) || Number(maxVenues) < 0) {
+        return res.status(400).json({ success: false, message: "maxVenues must be a non-negative integer." });
+      }
+      plan.maxVenues = Number(maxVenues);
+    }
+    if (maxPhotos !== undefined) {
+      if (isNaN(Number(maxPhotos)) || Number(maxPhotos) < 0) {
+        return res.status(400).json({ success: false, message: "maxPhotos must be a non-negative integer." });
+      }
+      plan.maxPhotos = Number(maxPhotos);
     }
 
     // ── Add-on relationship validation on update ────────────────

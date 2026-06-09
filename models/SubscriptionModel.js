@@ -8,6 +8,14 @@ const planSnapshotSchema = {
     type: [String],
     default: [],
   },
+  maxVenues: {
+    type: Number,
+    default: 0,
+  },
+  maxPhotos: {
+    type: Number,
+    default: 0,
+  },
 };
 
 const fullPaymentSubscriptionSchema = new mongoose.Schema(

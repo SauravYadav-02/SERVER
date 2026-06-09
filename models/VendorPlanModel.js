@@ -23,6 +23,12 @@ const vendorPlanSchema = new mongoose.Schema(
       required: [true, "Maximum venues is required"],
       min: [0, "Maximum venues must be non-negative"],
     },
+    maxPhotos: {
+      type: Number,
+      required: [true, "Maximum photos is required"],
+      min: [0, "Maximum photos must be non-negative"],
+      default: 10,
+    },
     visibilityBoost: {
       type: Boolean,
       default: false,

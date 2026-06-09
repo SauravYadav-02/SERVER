@@ -28,6 +28,14 @@ const subscriptionQueueSchema = new mongoose.Schema(
         type: [String],
         default: [],
       },
+      maxVenues: {
+        type: Number,
+        default: 0,
+      },
+      maxPhotos: {
+        type: Number,
+        default: 0,
+      },
     },
 
     // FIFO position within this vendor's queue

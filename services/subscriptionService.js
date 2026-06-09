@@ -31,6 +31,8 @@ const buildPlanSnapshot = (plan) => ({
   duration_days: plan.duration_days,
   price: plan.price,
   features: Array.isArray(plan.features) ? plan.features : [],
+  maxVenues: plan.maxVenues || 0,
+  maxPhotos: plan.maxPhotos || 0,
 });
 
 const buildDates = (startDate, durationDays, explicitEndDate = null) => {
@@ -954,4 +956,90 @@ export const getVendorSubscriptionStatus = async (vendorId) => {
 
   await syncSubscriptionStatus(sub);
   return sub.status;
+};
+
+export const getAggregatedPlanLimits = async (vendorId) => {
+  const fallbackLimits = {
+    maxVenues: 1,
+    maxPhotos: 10,
+    visibilityBoost: false,
+    customBranding: false,
+    supportTier: "basic",
+  };
+
+  if (!vendorId) {
+    return fallbackLimits;
+  }
+
+  // 1. Check if they have the new/main Subscription
+  const sub = await Subscription.findOne({ vendorId }).populate("planId");
+  
+  // 2. Check if they have the old VendorSubscription
+  const vendorSub = await VendorSubscription.findOne({ vendorId }).populate("planId");
+
+  let baseMaxVenues = 0;
+  let baseMaxPhotos = 0;
+  let visibilityBoost = false;
+  let customBranding = false;
+  let supportTier = "basic";
+  let hasBaseSub = false;
+
+  // Use main Subscription if active or grace
+  if (sub && (sub.status === "ACTIVE" || sub.status === "active" || sub.status === "grace")) {
+    hasBaseSub = true;
+    baseMaxVenues = sub.planSnapshot?.maxVenues || sub.planId?.maxVenues || 0;
+    baseMaxPhotos = sub.planSnapshot?.maxPhotos || sub.planId?.maxPhotos || 0;
+    visibilityBoost = sub.planSnapshot?.features?.includes("Visibility Boost") || sub.planId?.features?.includes("Visibility Boost") || false;
+    customBranding = sub.planSnapshot?.features?.includes("Custom Branding") || sub.planId?.features?.includes("Custom Branding") || false;
+    supportTier = sub.planSnapshot?.features?.includes("Priority Support") || sub.planId?.features?.includes("Priority Support") ? "priority" : "basic";
+  } 
+  // Otherwise check VendorSubscription
+  else if (vendorSub && (vendorSub.status === "active" || vendorSub.status === "grace" || vendorSub.status === "ACTIVE")) {
+    hasBaseSub = true;
+    baseMaxVenues = vendorSub.planId?.maxVenues || 0;
+    baseMaxPhotos = vendorSub.planId?.maxPhotos || 10;
+    visibilityBoost = vendorSub.planId?.visibilityBoost || false;
+    customBranding = vendorSub.planId?.customBranding || false;
+    supportTier = vendorSub.planId?.supportTier || "basic";
+  }
+
+  // If no active base subscription, we use the fallback base limits
+  if (!hasBaseSub) {
+    baseMaxVenues = fallbackLimits.maxVenues;
+    baseMaxPhotos = fallbackLimits.maxPhotos;
+    visibilityBoost = fallbackLimits.visibilityBoost;
+    customBranding = fallbackLimits.customBranding;
+    supportTier = fallbackLimits.supportTier;
+  }
+
+  // 3. Aggregate active add-on plans (only applies to main subscription system)
+  const activeAddons = await AddonSubscription.find({ userId: vendorId, status: "ACTIVE" }).populate("addonId");
+  
+  let totalMaxVenues = baseMaxVenues;
+  let totalMaxPhotos = baseMaxPhotos;
+
+  for (const addon of activeAddons) {
+    if (addon.addonId) {
+      totalMaxVenues += (addon.addonId.maxVenues || 0);
+      totalMaxPhotos += (addon.addonId.maxPhotos || 0);
+      
+      if (addon.addonId.features?.includes("Visibility Boost")) {
+        visibilityBoost = true;
+      }
+      if (addon.addonId.features?.includes("Custom Branding")) {
+        customBranding = true;
+      }
+      if (addon.addonId.features?.includes("Priority Support")) {
+        supportTier = "priority";
+      }
+    }
+  }
+
+  return {
+    maxVenues: totalMaxVenues,
+    maxPhotos: totalMaxPhotos,
+    visibilityBoost,
+    customBranding,
+    supportTier,
+  };
 };

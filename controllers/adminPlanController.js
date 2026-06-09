@@ -11,7 +11,7 @@ const handleError = (res, error) => {
 // Create a new vendor plan
 export const createPlan = async (req, res) => {
   try {
-    const { name, monthlyPrice, yearlyPrice, maxVenues, visibilityBoost, customBranding, supportTier, isActive } = req.body;
+    const { name, monthlyPrice, yearlyPrice, maxVenues, maxPhotos, visibilityBoost, customBranding, supportTier, isActive } = req.body;
     
     // Check if a plan with the same name already exists
     const existingPlan = await VendorPlan.findOne({ name });
@@ -24,6 +24,7 @@ export const createPlan = async (req, res) => {
       monthlyPrice,
       yearlyPrice,
       maxVenues,
+      maxPhotos: maxPhotos !== undefined ? maxPhotos : 10,
       visibilityBoost,
       customBranding,
       supportTier,

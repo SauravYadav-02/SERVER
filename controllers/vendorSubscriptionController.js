@@ -1,6 +1,7 @@
 import VendorPlan from "../models/VendorPlanModel.js";
 import VendorSubscription from "../models/VendorSubscriptionModel.js";
 import Venue from "../models/VenueModel.js";
+import { getAggregatedPlanLimits } from "../services/subscriptionService.js";
 
 const handleError = (res, error) => {
   console.error("Vendor Subscription Controller Error:", error);
@@ -81,10 +82,12 @@ export const getSubscriptionStatus = async (req, res) => {
     
     // Count active (non-deleted) venues for this vendor
     const venueUsage = await Venue.countDocuments({ vendorId, deleted: { $ne: true } });
+    const planLimits = await getAggregatedPlanLimits(vendorId);
 
     res.status(200).json({
       subscription,
       venueUsage,
+      planLimits,
     });
   } catch (error) {
     handleError(res, error);
