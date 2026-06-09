@@ -8,6 +8,7 @@ import fs from "fs/promises";
 import { getVendorSubscriptionStatus, handleExpiry } from "../services/subscriptionService.js";
 import { paginate } from "../utils/pagination.js";
 import RatingFeedback from "../models/RatingFeedbackModel.js";
+import { checkSubscription } from "../middleare/checkSubscription.js";
 
 const router = express.Router();
 
@@ -66,7 +67,7 @@ const attachRatingStats = async (venues) => {
 };
 
 // ✅ Create Venue (with images)
-router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
+router.post("/add", venueUpload.array("mediaFiles", 10), checkSubscription, async (req, res) => {
   try {
     const { vendorId } = req.body;
     
@@ -75,6 +76,14 @@ router.post("/add", venueUpload.array("mediaFiles", 10), async (req, res) => {
     if (subStatus === "expired" || subStatus === "none") {
       return res.status(403).json({ 
         message: "Action forbidden: You need an active subscription to list new venues." 
+      });
+    }
+
+    // ✅ Limit check: Ensure vendor has not exceeded maximum venues allowed by their plan
+    const activeVenuesCount = await Venue.countDocuments({ vendorId, deleted: { $ne: true } });
+    if (req.planLimits && activeVenuesCount >= req.planLimits.maxVenues) {
+      return res.status(403).json({
+        message: `Action forbidden: You have reached the maximum number of venues (${req.planLimits.maxVenues}) allowed for your plan.`
       });
     }
 

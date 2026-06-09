@@ -8,6 +8,7 @@ import Admin from "../models/AdminModel.js";
 import { createPaymentHistory } from "./paymentHistoryService.js";
 import PaymentHistory from "../models/PaymentHistoryModel.js";
 import AddonSubscription from "../models/AddonSubscriptionModel.js";
+import VendorSubscription from "../models/VendorSubscriptionModel.js";
 
 const GRACE_DAYS = 15;
 const EXPIRY_WARNING_DAYS = 15;
@@ -942,6 +943,12 @@ export const sendSubscriptionNotifications = async () => {
 };
 
 export const getVendorSubscriptionStatus = async (vendorId) => {
+  // First check the new VendorSubscription model
+  const newSub = await VendorSubscription.findOne({ vendorId });
+  if (newSub) {
+    return newSub.status; // active, grace, expired
+  }
+
   const sub = await Subscription.findOne({ vendorId });
   if (!sub) return "none";
 
