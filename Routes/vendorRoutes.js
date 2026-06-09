@@ -109,6 +109,15 @@ router.post(
                 });
             }
 
+            // Check if email already exists
+            const existingEmail = req.body.email ? req.body.email.toLowerCase().trim() : "";
+            const existingVendor = await Vendor.findOne({ email: existingEmail });
+            if (existingVendor) {
+                return res.status(400).json({
+                    message: `Email "${req.body.email}" is already registered. Please use a different email or contact support.`
+                });
+            }
+
             const vendor = new Vendor({
                 ...req.body,
                 governmentId: governmentIdFile,
