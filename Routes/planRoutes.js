@@ -34,19 +34,27 @@ const validateAddonRelationship = async (planType, parentPlanId) => {
   const cleanParentPlanId = (parentPlanId === "None" || parentPlanId === "null" || parentPlanId === "" || parentPlanId === "undefined") ? null : parentPlanId;
 
   if (planType === "addon" || planType === "full payment") {
-    // parentPlanId is optional – only validate when supplied
-    if (cleanParentPlanId) {
-      if (!mongoose.Types.ObjectId.isValid(cleanParentPlanId)) {
-        return "parentPlanId must be a valid MongoDB ObjectId.";
-      }
-      const parentPlan = await Plan.findOne({
-        _id: cleanParentPlanId,
-        is_active: true,
-        deletedAt: null,
-        planType: "base",
-      });
-      if (!parentPlan) return "Parent plan must be an active base plan.";
+    // If explicitly null (Universal Add-on), it is valid
+    if (cleanParentPlanId === null) {
+      return null;
     }
+
+    // If it is undefined/missing, return validation error
+    if (parentPlanId === undefined) {
+      return "Add-on must have a parent plan";
+    }
+
+    // If a parent plan ID is supplied, validate it
+    if (!mongoose.Types.ObjectId.isValid(cleanParentPlanId)) {
+      return "parentPlanId must be a valid MongoDB ObjectId.";
+    }
+    const parentPlan = await Plan.findOne({
+      _id: cleanParentPlanId,
+      is_active: true,
+      deletedAt: null,
+      planType: "base",
+    });
+    if (!parentPlan) return "Parent plan must be an active base plan.";
   }
 
   if (planType === "base" && cleanParentPlanId) {
@@ -135,6 +143,14 @@ router.get("/all", isAdmin, async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 router.post("/", isAdmin, async (req, res) => {
   try {
+    // Normalize planType to lowercase "addon" if "Add-on" or "add-on" is sent
+    if (req.body.planType) {
+      const t = req.body.planType.toLowerCase().trim();
+      if (t === "addon" || t === "add-on") {
+        req.body.planType = "addon";
+      }
+    }
+
     const errors = validatePlanBody(req.body);
     if (errors.length > 0) {
       return res.status(400).json({ success: false, message: "Validation failed.", errors });
@@ -180,6 +196,14 @@ router.put("/:id", isAdmin, async (req, res) => {
     const plan = await Plan.findOne({ _id: req.params.id, deletedAt: null });
     if (!plan) {
       return res.status(404).json({ success: false, message: "Plan not found." });
+    }
+
+    // Normalize planType to lowercase "addon" if "Add-on" or "add-on" is sent
+    if (req.body.planType) {
+      const t = req.body.planType.toLowerCase().trim();
+      if (t === "addon" || t === "add-on") {
+        req.body.planType = "addon";
+      }
     }
 
     const { name, duration_days, price, planType, parentPlanId, is_active, features } = req.body;
