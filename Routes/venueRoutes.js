@@ -1,6 +1,7 @@
 import express from "express";
+import mongoose from "mongoose";
 import Venue from "../models/VenueModel.js";
-import "../models/VendorModel.js";
+import Vendor from "../models/VendorModel.js";
 import User from "../models/UserModel.js";
 import Booking from "../models/BookingModel.js";
 import venueUpload from "../middleare/venueUpload.js";
@@ -71,6 +72,16 @@ router.post("/add", venueUpload.array("mediaFiles", 50), checkSubscription, asyn
   try {
     const { vendorId } = req.body;
     
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor || vendor.deleted) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+    if (vendor.status === "suspended") {
+      return res.status(403).json({ 
+        message: "Action forbidden: Your vendor account is suspended. Please contact support." 
+      });
+    }
+
     // ✅ Safeguard: Check subscription before allowing new venue creation
     const subStatus = await getVendorSubscriptionStatus(vendorId);
     if (subStatus === "expired" || subStatus === "none") {
@@ -185,15 +196,22 @@ router.get("/discover", async (req, res) => {
       { deleted: { $ne: true } },
     ];
 
-    // Full-text search: regex across name, description, city, type
+    // Full-text search: regex across name, description, city, type, and vendor name
     if (search && search.trim()) {
       const regex = new RegExp(search.trim(), "i");
+      
+      const matchingVendors = await mongoose.model("Vendor").find({
+        fullName: regex
+      }).select("_id");
+      const vendorIds = matchingVendors.map(v => v._id);
+
       andConditions.push({
         $or: [
           { name:        regex },
           { description: regex },
           { city:        regex },
           { type:        regex },
+          { vendorId:    { $in: vendorIds } },
         ],
       });
     }
@@ -359,7 +377,7 @@ router.get("/vendor/:vendorId", async (req, res) => {
 // ✅ 4. GET Single Venue (Full Details — subscription-gated)
 router.get("/:id", async (req, res) => {
   try {
-    const venue = await Venue.findOne({ _id: req.params.id, deleted: { $ne: true } });
+    const venue = await Venue.findOne({ _id: req.params.id, deleted: { $ne: true } }).populate("vendorId", "fullName email phone businessName");
 
     if (!venue) {
       return res.status(404).json({ message: "Venue not found" });
@@ -375,7 +393,7 @@ router.get("/:id", async (req, res) => {
     }
 
     // Check vendor's subscription status
-    const subStatus = await getVendorSubscriptionStatus(venue.vendorId);
+    const subStatus = await getVendorSubscriptionStatus(venue.vendorId?._id || venue.vendorId);
 
     if (subStatus === "expired" || subStatus === "none") {
       // Allow access if the requesting user has a booking for this venue
@@ -418,6 +436,16 @@ router.put("/:id", venueUpload.array("mediaFiles", 50), checkSubscription, async
 
     if (!venue) {
       return res.status(404).json({ message: "Venue not found" });
+    }
+
+    const vendor = await Vendor.findById(venue.vendorId);
+    if (!vendor || vendor.deleted) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+    if (vendor.status === "suspended") {
+      return res.status(403).json({
+        message: "Action forbidden: Your vendor account is suspended."
+      });
     }
 
     // ✅ Safeguard: Check subscription before allowing updates (prevent reactivation)
@@ -555,6 +583,16 @@ router.delete("/:id", async (req, res) => {
 
     if (!venue) {
       return res.status(404).json({ message: "Venue not found" });
+    }
+
+    const vendor = await Vendor.findById(venue.vendorId);
+    if (!vendor || vendor.deleted) {
+      return res.status(404).json({ message: "Vendor not found." });
+    }
+    if (vendor.status === "suspended") {
+      return res.status(403).json({
+        message: "Action forbidden: Your vendor account is suspended."
+      });
     }
 
     // ✅ Ownership check — only the venue's vendor can delete it

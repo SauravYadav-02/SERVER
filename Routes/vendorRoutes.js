@@ -230,6 +230,10 @@ router.post("/login", async (req, res) => {
             return res.status(404).json({ message: "Vendor not found" });
         }
 
+        if (vendor.status === "suspended") {
+            return res.status(403).json({ message: "Access denied. Your vendor account is suspended. Please contact support." });
+        }
+
         if (vendor.status !== "approved") {
             return res.status(403).json({ message: "Not approved by admin" });
         }

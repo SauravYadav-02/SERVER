@@ -3,6 +3,7 @@ import User from "../models/UserModel.js";
 import userUpload from "../middleare/userUpload.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 import { paginate } from "../utils/pagination.js";
+import { suspendUser, unsuspendUser } from "../services/userService.js";
 
 const router = express.Router();
 
@@ -61,6 +62,10 @@ router.post("/login", async (req, res) => {
 
         if (!user || user.password !== password) {
             return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        if (user.status === "suspended") {
+            return res.status(403).json({ message: "Access denied. Your account is suspended. Please contact support." });
         }
 
         const response = buildUserResponse(user, req);
@@ -163,4 +168,27 @@ router.delete("/:id", async (req, res) => {
         res.status(500).json({ message: "Failed to soft delete user", error: error.message });
     }
 });
+
+// Admin: Suspend User
+router.put("/suspend/:id", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await suspendUser(id);
+        res.json({ message: "User suspended successfully", user });
+    } catch (err) {
+        res.status(500).json({ message: "Error suspending user", error: err.message });
+    }
+});
+
+// Admin: Unsuspend User
+router.put("/unsuspend/:id", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await unsuspendUser(id);
+        res.json({ message: "User unsuspended successfully", user });
+    } catch (err) {
+        res.status(500).json({ message: "Error unsuspending user", error: err.message });
+    }
+});
+
 export default router;

@@ -1,6 +1,7 @@
 import express from "express";
 import Report from "../models/ReportModel.js";
 import User from "../models/UserModel.js";
+import Vendor from "../models/VendorModel.js";
 import Venue from "../models/VenueModel.js";
 import reportUpload from "../middleare/reportUpload.js";
 import { isUser } from "../middleare/isUser.js";
@@ -8,6 +9,32 @@ import { isAdmin } from "../middleare/isAdmin.js";
 import { isVendor } from "../middleare/isVendor.js";
 
 const router = express.Router();
+
+// Middleware to block suspended users/vendors using headers directly
+const checkReportAuthStatus = async (req, res, next) => {
+    const userId = req.headers.userid || req.headers["userid"];
+    const vendorId = req.headers.vendorid || req.headers["vendorid"] || req.vendorId;
+
+    try {
+        if (userId) {
+            const user = await User.findById(userId);
+            if (user && user.status === "suspended") {
+                return res.status(403).json({ message: "Access denied. Your account is suspended." });
+            }
+        }
+        if (vendorId) {
+            const vendor = await Vendor.findById(vendorId);
+            if (vendor && vendor.status === "suspended") {
+                return res.status(403).json({ message: "Access denied. Your vendor account is suspended." });
+            }
+        }
+        next();
+    } catch (err) {
+        res.status(500).json({ message: "Auth validation error", error: err.message });
+    }
+};
+
+router.use(checkReportAuthStatus);
 
 // Helper to sanitize paths
 const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");

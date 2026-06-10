@@ -98,17 +98,25 @@ export const createBookingWithUpfrontPayment = async (payload) => {
   }
 
   const [user, vendor, venue] = await Promise.all([
-    User.findById(userId).select("_id"),
-    Vendor.findById(vendorId).select("_id"),
+    User.findById(userId).select("_id status deleted"),
+    Vendor.findById(vendorId).select("_id status deleted"),
     Venue.findById(venueId).select("_id vendorId isSubscriptionActive availableFrom pricePerDay vegPrice nonVegPrice capacity"),
   ]);
 
-  if (!user) {
+  if (!user || user.deleted) {
     throw createError("User not found", 404);
   }
 
-  if (!vendor) {
+  if (user.status === "suspended") {
+    throw createError("Access denied: Your account is suspended.", 403);
+  }
+
+  if (!vendor || vendor.deleted) {
     throw createError("Vendor not found", 404);
+  }
+
+  if (vendor.status === "suspended") {
+    throw createError("Venue is not available for booking yet.", 403);
   }
 
   if (!venue) {
@@ -221,6 +229,19 @@ export const simulatePayment = async ({ bookingId, outcome, status, paymentStatu
     throw createError("Booking not found", 404);
   }
 
+  const [user, vendor] = await Promise.all([
+    User.findById(booking.userId).select("status deleted"),
+    Vendor.findById(booking.vendorId).select("status deleted"),
+  ]);
+
+  if (user && (user.status === "suspended" || user.deleted)) {
+    throw createError("User account is suspended or deleted", 403);
+  }
+
+  if (vendor && (vendor.status === "suspended" || vendor.deleted)) {
+    throw createError("Vendor account is suspended or deleted", 403);
+  }
+
   if (booking.paymentStatus === "success") {
     throw createError("Payment has already been completed for this booking", 409);
   }
@@ -305,8 +326,16 @@ export const getUserPayments = async (userId) => {
     throw createError("A valid userId is required");
   }
 
+  const user = await User.findById(userId).select("status deleted");
+  if (!user || user.deleted) {
+    throw createError("User not found", 404);
+  }
+  if (user.status === "suspended") {
+    throw createError("Access denied. Your account is suspended.", 403);
+  }
+
   const payments = await UserVendorPayment.find({ userId })
-    .populate("vendorId", "name businessName")
+    .populate("vendorId", "fullName businessName")
     .populate("venueId", "name")
     .sort({ createdAt: -1 });
 
@@ -316,6 +345,14 @@ export const getUserPayments = async (userId) => {
 export const getVendorPayments = async (vendorId) => {
   if (!vendorId || !isValidObjectId(vendorId)) {
     throw createError("A valid vendorId is required");
+  }
+
+  const vendor = await Vendor.findById(vendorId).select("status deleted");
+  if (!vendor || vendor.deleted) {
+    throw createError("Vendor not found", 404);
+  }
+  if (vendor.status === "suspended") {
+    throw createError("Access denied. Your vendor account is suspended.", 403);
   }
 
   const payments = await UserVendorPayment.find({ vendorId })

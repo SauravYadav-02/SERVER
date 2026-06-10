@@ -2,6 +2,7 @@ import express from "express";
 import RatingFeedback from "../models/RatingFeedbackModel.js";
 import Venue from "../models/VenueModel.js";
 import User from "../models/UserModel.js";
+import Vendor from "../models/VendorModel.js";
 
 const router = express.Router();
 
@@ -117,6 +118,10 @@ router.post("/venue/:venueId", async (req, res) => {
     if (!venue) return res.status(404).json({ message: "Venue not found" });
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    if (user.status === "suspended") {
+      return res.status(403).json({ message: "Access denied. Your account is suspended." });
+    }
+
     // Check for existing review
     let review = await RatingFeedback.findOne({ venueId: venue._id, userId: user._id });
 
@@ -166,6 +171,14 @@ router.get("/vendor/:vendorId", async (req, res) => {
   try {
     const { vendorId } = req.params;
     const { sort, venueId, page = 1, limit = 10 } = req.query;
+
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor || vendor.deleted) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+    if (vendor.status === "suspended") {
+      return res.status(403).json({ message: "Access denied. Your vendor account is suspended." });
+    }
 
     const venues = await Venue.find({ vendorId }).select("_id name");
     if (!venues || venues.length === 0) {

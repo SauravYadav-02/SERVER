@@ -1,10 +1,12 @@
 import express from "express";
+import mongoose from "mongoose";
 import Admin from "../models/AdminModel.js";
 import Venue from "../models/VenueModel.js";
 import RatingFeedback from "../models/RatingFeedbackModel.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 import { paginate } from "../utils/pagination.js";
 import { suspendVendor, unsuspendVendor } from "../services/vendorService.js";
+import { suspendUser, unsuspendUser } from "../services/userService.js";
 
 const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
 
@@ -29,15 +31,25 @@ router.post("/register", async (req,res)=>{
 
 // Login
 router.post("/login", async (req,res)=>{
-    const {username,password} = req.body;
+    try {
+        const {username,password} = req.body;
 
-    const admin = await Admin.findOne({username});
+        if (!username || !password) {
+            return res.status(400).json({message:"Username and password are required"});
+        }
 
-    if(!admin || admin.password !== password){
-        return res.status(400).json({message:"Invalid credentials"});
+        const admin = await Admin.findOne({username});
+
+        if(!admin || admin.password !== password){
+            return res.status(400).json({message:"Invalid credentials"});
+        }
+
+        console.log(`[Audit] Admin ${username} logged in successfully.`);
+        res.json({message:"Login success", admin});
+    } catch (error) {
+        console.error("Admin login error:", error);
+        res.status(500).json({message:"Server error during login", error: error.message});
     }
-
-    res.json({message:"Login success", admin});
 });
 
 // Admin: Get all venues with vendor details (Paginated)
@@ -48,9 +60,16 @@ router.get("/venues", isAdmin, async (req, res) => {
         const query = {};
         if (status) query.status = status;
         if (search) {
+            const regex = new RegExp(search.trim(), "i");
+            const matchingVendors = await mongoose.model("Vendor").find({
+                fullName: regex
+            }).select("_id");
+            const vendorIds = matchingVendors.map(v => v._id);
+
             query.$or = [
                 { name: { $regex: search, $options: "i" } },
                 { city: { $regex: search, $options: "i" } },
+                { vendorId: { $in: vendorIds } },
             ];
         }
 
@@ -185,6 +204,34 @@ router.put("/vendors/:id/unsuspend", isAdmin, async (req, res) => {
             return res.status(404).json({ message: err.message });
         }
         res.status(500).json({ message: "Error unsuspending vendor", error: err.message });
+    }
+});
+
+// Admin: Suspend User
+router.put("/users/:id/suspend", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await suspendUser(id);
+        res.json({ message: "User suspended successfully", user });
+    } catch (err) {
+        if (err.message === "User not found or deleted") {
+            return res.status(404).json({ message: err.message });
+        }
+        res.status(500).json({ message: "Error suspending user", error: err.message });
+    }
+});
+
+// Admin: Unsuspend User
+router.put("/users/:id/unsuspend", isAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await unsuspendUser(id);
+        res.json({ message: "User unsuspended successfully", user });
+    } catch (err) {
+        if (err.message === "User not found or deleted") {
+            return res.status(404).json({ message: err.message });
+        }
+        res.status(500).json({ message: "Error unsuspending user", error: err.message });
     }
 });
 

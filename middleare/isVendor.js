@@ -1,4 +1,5 @@
 import VendorSubscription from "../models/VendorSubscriptionModel.js";
+import Vendor from "../models/VendorModel.js";
 
 /**
  * isVendor middleware
@@ -13,9 +14,22 @@ export const isVendor = async (req, res, next) => {
     return res.status(401).json({ message: "Vendor not authenticated. Missing vendorid header." });
   }
 
-  req.vendorId = vendorId;
-
   try {
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor || vendor.deleted) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+
+    if (vendor.status === "suspended") {
+      return res.status(403).json({ message: "Access denied. Your vendor account is suspended." });
+    }
+
+    if (vendor.status !== "approved") {
+      return res.status(403).json({ message: "Access denied. Vendor account is not approved." });
+    }
+
+    req.vendorId = vendorId;
+
     const fallbackLimits = {
       maxVenues: 1,
       visibilityBoost: false,

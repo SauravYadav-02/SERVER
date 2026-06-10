@@ -11,6 +11,32 @@ import { isAdmin } from "../middleare/isAdmin.js";
 
 const router = express.Router();
 
+// Middleware to block suspended users/vendors using headers directly
+const checkComplaintAuthStatus = async (req, res, next) => {
+    const userId = req.headers.userid || req.headers["userid"];
+    const vendorId = req.headers.vendorid || req.headers["vendorid"];
+
+    try {
+        if (userId) {
+            const user = await User.findById(userId);
+            if (user && user.status === "suspended") {
+                return res.status(403).json({ message: "Access denied. Your account is suspended." });
+            }
+        }
+        if (vendorId) {
+            const vendor = await Vendor.findById(vendorId);
+            if (vendor && vendor.status === "suspended") {
+                return res.status(403).json({ message: "Access denied. Your vendor account is suspended." });
+            }
+        }
+        next();
+    } catch (err) {
+        res.status(500).json({ message: "Auth validation error", error: err.message });
+    }
+};
+
+router.use(checkComplaintAuthStatus);
+
 // Helper to sanitize paths
 const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
 
