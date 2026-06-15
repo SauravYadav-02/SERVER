@@ -7,6 +7,7 @@ import reportUpload from "../middleare/reportUpload.js";
 import { isUser } from "../middleare/isUser.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 import { isVendor } from "../middleare/isVendor.js";
+import { paginate } from "../utils/pagination.js";
 
 const router = express.Router();
 
@@ -105,6 +106,34 @@ router.get("/", async (req, res) => {
             return res.status(401).json({ message: "Unauthorized. Missing identifier headers." });
         }
 
+        const { page, limit } = req.query;
+
+        if (page || limit) {
+            const paginationResult = await paginate(Report, query, {
+                page,
+                limit,
+                populate: [
+                    { path: "user", select: "name email phone" },
+                    {
+                        path: "venue",
+                        select: "name city vendorId",
+                        populate: {
+                            path: "vendorId",
+                            select: "fullName businessName email"
+                        }
+                    }
+                ],
+                sort: { createdAt: -1 }
+            });
+
+            paginationResult.data = paginationResult.data.map(report => formatAttachments(report, req));
+
+            return res.json({
+                success: true,
+                ...paginationResult
+            });
+        }
+
         const reports = await Report.find(query)
             .populate("user", "name email phone")
             .populate({
@@ -128,12 +157,34 @@ router.get("/", async (req, res) => {
 router.get("/vendor", isVendor, async (req, res) => {
     try {
         const vendorId = req.vendorId;
+        const { page, limit } = req.query;
 
         // Fetch all venues owned by this vendor
         const venues = await Venue.find({ vendorId }, "_id");
         const venueIds = venues.map(v => v._id);
 
-        const reports = await Report.find({ venue: { $in: venueIds } })
+        const query = { venue: { $in: venueIds } };
+
+        if (page || limit) {
+            const paginationResult = await paginate(Report, query, {
+                page,
+                limit,
+                populate: [
+                    { path: "user", select: "name email phone" },
+                    { path: "venue", select: "name city" }
+                ],
+                sort: { createdAt: -1 }
+            });
+
+            paginationResult.data = paginationResult.data.map(report => formatAttachments(report, req));
+
+            return res.json({
+                success: true,
+                ...paginationResult
+            });
+        }
+
+        const reports = await Report.find(query)
             .populate("user", "name email phone")
             .populate("venue", "name city")
             .sort({ createdAt: -1 });

@@ -238,6 +238,24 @@ export const getPaymentHistoryForVendor = async (vendorId, filters = {}) => {
     return dateB.getTime() - dateA.getTime();
   });
 
+  if (filters.page || filters.limit) {
+    const page = Math.max(1, parseInt(filters.page) || 1);
+    const limit = Math.max(1, parseInt(filters.limit) || 10);
+    const skip = (page - 1) * limit;
+
+    const totalRecords = combined.length;
+    const data = combined.slice(skip, skip + limit);
+    const totalPages = Math.ceil(totalRecords / limit);
+
+    return {
+      data,
+      page,
+      limit,
+      totalRecords,
+      totalPages
+    };
+  }
+
   return combined;
 };
 

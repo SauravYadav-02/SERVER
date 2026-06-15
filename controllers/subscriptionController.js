@@ -160,6 +160,36 @@ export const getMyAddons = async (req, res) => {
 
 export const getAllAddonsForAdmin = async (req, res) => {
   try {
+    const { page, limit } = req.query;
+
+    if (page || limit) {
+      const p = Math.max(1, parseInt(page) || 1);
+      const l = Math.max(1, parseInt(limit) || 10);
+      const skip = (p - 1) * l;
+
+      const [totalRecords, data] = await Promise.all([
+        AddonSubscription.countDocuments(),
+        AddonSubscription.find()
+          .populate("userId", "fullName email businessName status")
+          .populate("addonId", "name price duration_days features planType")
+          .populate("baseSubscriptionId", "planId status startDate endDate")
+          .skip(skip)
+          .limit(l)
+          .lean()
+      ]);
+
+      const totalPages = Math.ceil(totalRecords / l);
+
+      return res.json({
+        success: true,
+        data,
+        page: p,
+        limit: l,
+        totalRecords,
+        totalPages
+      });
+    }
+
     const addons = await AddonSubscription.find()
       .populate("userId", "fullName email businessName status")
       .populate("addonId", "name price duration_days features planType")

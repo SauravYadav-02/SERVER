@@ -8,6 +8,7 @@ import Venue from "../models/VenueModel.js";
 import complaintUpload from "../middleare/complaintUpload.js";
 import { isUser } from "../middleare/isUser.js";
 import { isAdmin } from "../middleare/isAdmin.js";
+import { paginate } from "../utils/pagination.js";
 
 const router = express.Router();
 
@@ -91,6 +92,36 @@ router.get("/", async (req, res) => {
             query.user = userId;
         } else {
             return res.status(401).json({ message: "Unauthorized. Missing identifier headers." });
+        }
+
+        const { page, limit } = req.query;
+
+        if (page || limit) {
+            const paginationResult = await paginate(Complaint, query, {
+                page,
+                limit,
+                populate: [
+                    { path: "user", select: "name email phone" },
+                    { path: "vendor", select: "fullName businessName email" },
+                    { path: "venue", select: "name city" }
+                ],
+                sort: { createdAt: -1 }
+            });
+
+            // Map attachment full URLs
+            paginationResult.data = paginationResult.data.map(complaint => {
+                if (complaint.attachments) {
+                    complaint.attachments = complaint.attachments.map(att => 
+                        att.startsWith("http") ? att : `${req.protocol}://${req.get("host")}/${att}`
+                    );
+                }
+                return complaint;
+            });
+
+            return res.json({
+                success: true,
+                ...paginationResult
+            });
         }
 
         const complaints = await Complaint.find(query)

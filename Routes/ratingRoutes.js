@@ -278,10 +278,39 @@ router.get("/vendor/:vendorId", async (req, res) => {
 // GET all reviews (admin use)
 router.get("/", async (req, res) => {
   try {
+    const { page, limit, status } = req.query;
     const query = {};
-    if (req.query.status) {
-      query.status = req.query.status;
+    if (status) {
+      query.status = status;
     }
+
+    if (page || limit) {
+      const p = Math.max(1, parseInt(page) || 1);
+      const l = Math.max(1, parseInt(limit) || 10);
+      const skip = (p - 1) * l;
+
+      const [totalRecords, reviews] = await Promise.all([
+        RatingFeedback.countDocuments(query),
+        RatingFeedback.find(query)
+          .populate("userId", "name email profilePhoto")
+          .populate("venueId", "name vendorId")
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(l)
+      ]);
+
+      const totalPages = Math.ceil(totalRecords / l);
+
+      return res.json({
+        success: true,
+        data: buildReviewsResponse(reviews, req),
+        page: p,
+        limit: l,
+        totalRecords,
+        totalPages
+      });
+    }
+
     const reviews = await RatingFeedback.find(query)
       .populate("userId", "name email profilePhoto")
       .populate("venueId", "name vendorId")

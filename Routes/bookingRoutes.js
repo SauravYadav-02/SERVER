@@ -68,6 +68,39 @@ router.post("/", async (req, res) => {
 router.get("/user/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
+    const { page, limit } = req.query;
+
+    if (page || limit) {
+      const p = Math.max(1, parseInt(page) || 1);
+      const l = Math.max(1, parseInt(limit) || 10);
+      const skip = (p - 1) * l;
+
+      const [totalRecords, data, allBookings] = await Promise.all([
+        Booking.countDocuments({ userId }),
+        Booking.find({ userId })
+          .populate("venueId", "name location")
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(l),
+        Booking.find({ userId }).select("cost status")
+      ]);
+
+      const totalSpent = allBookings.reduce((sum, b) => sum + (b.status !== "rejected" ? b.cost : 0), 0);
+      const totalBookings = allBookings.length;
+      const totalPages = Math.ceil(totalRecords / l);
+
+      return res.json({
+        success: true,
+        data,
+        page: p,
+        limit: l,
+        totalRecords,
+        totalPages,
+        totalSpent,
+        totalBookings
+      });
+    }
+
     const bookings = await Booking.find({ userId })
       .populate("venueId", "name location")
       .sort({ createdAt: -1 });
@@ -85,6 +118,35 @@ router.get("/user/:userId", async (req, res) => {
 router.get("/vendor/:vendorId", async (req, res) => {
   try {
     const { vendorId } = req.params;
+    const { page, limit } = req.query;
+
+    if (page || limit) {
+      const p = Math.max(1, parseInt(page) || 1);
+      const l = Math.max(1, parseInt(limit) || 10);
+      const skip = (p - 1) * l;
+
+      const [totalRecords, data] = await Promise.all([
+        Booking.countDocuments({ vendorId }),
+        Booking.find({ vendorId })
+          .populate("userId", "name username email")
+          .populate("venueId", "name")
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(l)
+      ]);
+
+      const totalPages = Math.ceil(totalRecords / l);
+
+      return res.json({
+        success: true,
+        data,
+        page: p,
+        limit: l,
+        totalRecords,
+        totalPages
+      });
+    }
+
     const bookings = await Booking.find({ vendorId })
       .populate("userId", "name username email")
       .populate("venueId", "name")

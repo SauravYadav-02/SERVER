@@ -55,11 +55,18 @@ export const getVendorPaymentHistory = async (req, res) => {
       });
     }
 
-    const paymentHistories = await getPaymentHistoryForVendor(vendorId, req.query);
+    const result = await getPaymentHistoryForVendor(vendorId, req.query);
+    if (result && typeof result === "object" && !Array.isArray(result)) {
+      return res.status(200).json({
+        success: true,
+        ...result
+      });
+    }
+
     res.status(200).json({
       success: true,
-      count: paymentHistories.length,
-      data: paymentHistories,
+      count: result.length,
+      data: result,
     });
   } catch (error) {
     sendError(res, error);
