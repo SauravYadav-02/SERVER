@@ -72,6 +72,28 @@ const venueSchema = new mongoose.Schema(
       default: true,
     },
 
+    deactivated: {
+      type: Boolean,
+      default: false,
+    },
+    deactivatedBy: {
+      type: String,
+      enum: ["admin", "vendor", null],
+      default: null,
+    },
+    deactivationReason: {
+      type: String,
+      default: "",
+    },
+    suspensionStart: {
+      type: Date,
+      default: null,
+    },
+    suspensionEnd: {
+      type: Date,
+      default: null,
+    },
+
     // ✅ Rating Statistics
     averageRating: {
       type: Number,
@@ -90,6 +112,8 @@ const venueSchema = new mongoose.Schema(
 );
 
 // ─── Performance Indexes for /discover endpoint ───────────────────────────────
+
+venueSchema.index({ deactivated: 1 });
 
 // Compound index: every discover query starts with these two fields
 venueSchema.index({ status: 1, isSubscriptionActive: 1 });

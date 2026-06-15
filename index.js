@@ -23,6 +23,7 @@ import complaintRoutes from "./Routes/complaintRoutes.js";
 import reportRoutes from "./Routes/reportRoutes.js";
 import todoRoutes from "./Routes/todoRoutes.js";
 
+import remainingPaymentRoutes from "./Routes/remainingPaymentRoutes.js";
 import { registerSubscriptionCronJobs } from "./jobs/subscriptionCron.js";
 import adminPlanRoutes from "./Routes/adminPlanRoutes.js";
 import vendorSubscriptionRoutes from "./Routes/vendorSubscriptionRoutes.js";
@@ -63,6 +64,7 @@ app.use("/subscription", subscriptionRoutes); // Vendor purchase, view, queue
 app.use("/payments", paymentHistoryRoutes); // Payment history
 app.use("/api/admin/plans", adminPlanRoutes);
 app.use("/api/vendor/subscription", vendorSubscriptionRoutes);
+app.use("/api/remaining-payment", remainingPaymentRoutes);
 
 app.listen(3000, "0.0.0.0", () => {
   console.log("Server running on port 3000");

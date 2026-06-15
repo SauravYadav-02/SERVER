@@ -28,7 +28,7 @@ const fullPaymentSubscriptionSchema = new mongoose.Schema(
     planSnapshot: planSnapshotSchema,
     status: {
       type: String,
-      enum: ["active", "expired"],
+      enum: ["active", "expired", "ACTIVE", "EXPIRED"],
       default: "active",
     },
     startDate: {

@@ -45,6 +45,25 @@ const bookingSchema = new mongoose.Schema(
       enum: ["pending", "success", "failed", "cancelled"],
       default: "pending",
     },
+    remainingAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    balancePaymentStatus: {
+      type: String,
+      enum: ["unpaid", "partial", "paid"],
+      default: "unpaid",
+    },
+    transactions: [
+      {
+        amount: { type: Number, required: true },
+        method: { type: String, enum: ["cash", "cheque", "online"], required: true },
+        loggedBy: { type: String, enum: ["user", "vendor"], required: true },
+        note: { type: String, default: "" }, // e.g. cheque number
+        paidAt: { type: Date, default: Date.now },
+      }
+    ],
     transactionId: {
       type: String,
       default: null,

@@ -124,6 +124,56 @@ router.put("/venues/:id/status", isAdmin, async (req, res) => {
     }
 });
 
+// Admin: Deactivate Venue (soft-delete)
+router.patch("/venues/:id/deactivate", isAdmin, async (req, res) => {
+    try {
+        const { reason } = req.body;
+
+        const venue = await Venue.findByIdAndUpdate(
+            req.params.id,
+            {
+                deactivated: true,
+                deactivatedBy: "admin",
+                deactivationReason: reason || "Deactivated by admin",
+                suspensionStart: null,
+                suspensionEnd: null
+            },
+            { new: true }
+        ).populate("vendorId", "fullName email phone businessName businessType address city state zip pincode status");
+
+        if (!venue) {
+            return res.status(404).json({ message: "Venue not found" });
+        }
+
+        res.json(buildVenueResponse(venue, req));
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Admin: Reactivate Venue
+router.patch("/venues/:id/reactivate", isAdmin, async (req, res) => {
+    try {
+        const venue = await Venue.findByIdAndUpdate(
+            req.params.id,
+            {
+                deactivated: false,
+                deactivatedBy: null,
+                deactivationReason: ""
+            },
+            { new: true }
+        ).populate("vendorId", "fullName email phone businessName businessType address city state zip pincode status");
+
+        if (!venue) {
+            return res.status(404).json({ message: "Venue not found" });
+        }
+
+        res.json(buildVenueResponse(venue, req));
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // Admin: Get all reviews across all venues (Paginated)
 router.get("/reviews", isAdmin, async (req, res) => {
     try {

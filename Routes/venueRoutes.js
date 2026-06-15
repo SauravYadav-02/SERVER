@@ -10,6 +10,7 @@ import { getVendorSubscriptionStatus, handleExpiry } from "../services/subscript
 import { paginate } from "../utils/pagination.js";
 import RatingFeedback from "../models/RatingFeedbackModel.js";
 import { checkSubscription } from "../middleare/checkSubscription.js";
+import { isVendor } from "../middleare/isVendor.js";
 
 const router = express.Router();
 
@@ -174,6 +175,29 @@ router.post("/add", venueUpload.array("mediaFiles", 50), checkSubscription, asyn
 });
 
 
+const autoReactivateExpiredSuspensions = async () => {
+  try {
+    const now = new Date();
+    await Venue.updateMany(
+      {
+        deactivated: true,
+        deactivatedBy: "vendor",
+        suspensionEnd: { $lt: now }
+      },
+      {
+        $set: {
+          deactivated: false,
+          deactivatedBy: null,
+          suspensionStart: null,
+          suspensionEnd: null
+        }
+      }
+    );
+  } catch (err) {
+    console.error("Error auto-reactivating expired suspensions:", err);
+  }
+};
+
 // ─────────────────────────────────────────────────────────────
 // ✅ GET /venues/discover — Paginated, searchable, filterable
 //    Query params:
@@ -182,6 +206,8 @@ router.post("/add", venueUpload.array("mediaFiles", 50), checkSubscription, asyn
 // ─────────────────────────────────────────────────────────────
 router.get("/discover", async (req, res) => {
   try {
+    await autoReactivateExpiredSuspensions();
+
     // ── Parse & validate query params ─────────────────────────
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 9));
@@ -194,6 +220,7 @@ router.get("/discover", async (req, res) => {
     const andConditions = [
       { status: "approved" },
       { deleted: { $ne: true } },
+      { deactivated: { $ne: true } },
     ];
 
     // Full-text search: regex across name, description, city, type, and vendor name
@@ -291,6 +318,8 @@ router.get("/discover", async (req, res) => {
 // ✅ Get All Venues (subscription-filtered for public users)
 router.get("/", async (req, res) => {
   try {
+    await autoReactivateExpiredSuspensions();
+
     // Admin bypass: pass ?admin=true to see all venues regardless of subscription
     if (req.query.admin === "true") {
       let venues = await Venue.find()
@@ -302,7 +331,8 @@ router.get("/", async (req, res) => {
     // Optimized query: filter directly in DB for better performance
     let visibleVenues = await Venue.find({
       status: "approved",
-      deleted: { $ne: true }
+      deleted: { $ne: true },
+      deactivated: { $ne: true }
       // isSubscriptionActive: true
     })
       .populate("vendorId", "fullName email");
@@ -350,6 +380,7 @@ router.get("/vendor/:vendorId", async (req, res) => {
 
     if (!isOwner && !isAdmin) {
       query.status = "approved";
+      query.deactivated = { $ne: true };
     } else if (status) {
       query.status = status;
     }
@@ -390,6 +421,12 @@ router.get("/:id", async (req, res) => {
     // Admin bypass
     if (req.query.admin === "true") {
       return res.json(finalVenue);
+    }
+
+    if (finalVenue.deactivated === true) {
+      return res.status(403).json({
+        message: "This venue is currently unavailable."
+      });
     }
 
     // Check vendor's subscription status
@@ -663,6 +700,83 @@ router.post("/sync-all-visibility", async (req, res) => {
   try {
     const result = await handleExpiry();
     res.json({ message: "Visibility synchronized successfully", ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ 10. PATCH Vendor Deactivate Venue (soft suspension)
+router.patch("/:id/vendor-deactivate", isVendor, async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id);
+    if (!venue) {
+      return res.status(404).json({ message: "Venue not found" });
+    }
+
+    // Ownership check
+    if (venue.vendorId.toString() !== req.vendorId) {
+      return res.status(403).json({ message: "Forbidden: You do not own this venue." });
+    }
+
+    // Validate: venue is not already deactivated by admin
+    if (venue.deactivated && venue.deactivatedBy === "admin") {
+      return res.status(403).json({
+        message: "This venue was deactivated by admin and cannot be modified by the vendor."
+      });
+    }
+
+    const { suspensionStart, suspensionEnd, reason } = req.body;
+    if (!suspensionStart || !suspensionEnd) {
+      return res.status(400).json({ message: "Suspension start and end dates are required." });
+    }
+
+    const start = new Date(suspensionStart);
+    const end = new Date(suspensionEnd);
+    if (end < start) {
+      return res.status(400).json({ message: "Suspension end date must be greater than or equal to start date." });
+    }
+
+    venue.deactivated = true;
+    venue.deactivatedBy = "vendor";
+    venue.suspensionStart = start;
+    venue.suspensionEnd = end;
+    venue.deactivationReason = reason || "";
+
+    await venue.save();
+    res.json(venue);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ 11. PATCH Vendor Reactivate Venue
+router.patch("/:id/vendor-reactivate", isVendor, async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id);
+    if (!venue) {
+      return res.status(404).json({ message: "Venue not found" });
+    }
+
+    // Ownership check
+    if (venue.vendorId.toString() !== req.vendorId) {
+      return res.status(403).json({ message: "Forbidden: You do not own this venue." });
+    }
+
+    // Validate: only admin can reactivate if deactivated by admin
+    if (venue.deactivatedBy === "admin") {
+      return res.status(403).json({
+        message: "This venue was deactivated by admin. Only admin can reactivate it."
+      });
+    }
+
+    venue.deactivated = false;
+    venue.deactivatedBy = null;
+    venue.suspensionStart = null;
+    venue.suspensionEnd = null;
+    venue.deactivationReason = "";
+
+    await venue.save();
+    res.json(venue);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

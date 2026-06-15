@@ -13,6 +13,8 @@ const toMoney = (value) => Number(Number(value).toFixed(2));
 
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 
+const getDocumentId = (value) => value?._id || value;
+
 const isValidBookingDate = (value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
@@ -76,7 +78,10 @@ const SLOT_MULTIPLIERS = {
 };
 
 export const createBookingWithUpfrontPayment = async (payload) => {
-  const { userId, vendorId, venueId, date, selectedSlot, selectedFoodType, guestCount } = payload;
+  const userId = getDocumentId(payload.userId);
+  const vendorId = getDocumentId(payload.vendorId);
+  const venueId = getDocumentId(payload.venueId);
+  const { date, selectedSlot, selectedFoodType, guestCount } = payload;
   const bookingDate = String(date || "").trim();
 
   if (!userId || !vendorId || !venueId || !date) {
@@ -195,6 +200,8 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     totalBookingAmount: finalAmount,
     upfrontPaymentAmount,
     amountPaid: 0,
+    remainingAmount: finalAmount,
+    balancePaymentStatus: "unpaid",
     paymentStatus: "pending",
     transactionId: null,
     paymentTimestamp: null,
@@ -258,6 +265,21 @@ export const simulatePayment = async ({ bookingId, outcome, status, paymentStatu
   booking.transactionId = transactionId;
   booking.paymentTimestamp = paymentTimestamp;
   booking.amountPaid = simulatedPaymentStatus === "success" ? upfrontPaymentAmount : 0;
+  booking.remainingAmount = simulatedPaymentStatus === "success" ? toMoney((booking.finalAmount || booking.totalBookingAmount || booking.cost || 0) - upfrontPaymentAmount) : (booking.finalAmount || booking.totalBookingAmount || booking.cost || 0);
+  booking.balancePaymentStatus = (simulatedPaymentStatus === "success") ? (booking.remainingAmount === 0 ? "paid" : "partial") : "unpaid";
+
+  if (simulatedPaymentStatus === "success") {
+    if (!booking.transactions) {
+      booking.transactions = [];
+    }
+    booking.transactions.push({
+      amount: upfrontPaymentAmount,
+      method: "online",
+      loggedBy: "user",
+      note: `Upfront payment - Txn: ${transactionId}`,
+      paidAt: paymentTimestamp,
+    });
+  }
 
   await booking.save();
 

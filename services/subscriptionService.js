@@ -156,7 +156,7 @@ const syncSubscriptionStatus = async (sub) => {
   for (const fullPayment of sub.fullPayments || []) {
     const paymentStatus = String(fullPayment.status).toUpperCase();
     if ((paymentStatus === "ACTIVE" || fullPayment.status === "active") && now > fullPayment.endDate) {
-      fullPayment.status = "EXPIRED";
+      fullPayment.status = "expired";
       changed = true;
     }
   }
