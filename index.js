@@ -28,6 +28,8 @@ import { registerSubscriptionCronJobs } from "./jobs/subscriptionCron.js";
 import adminPlanRoutes from "./Routes/adminPlanRoutes.js";
 import vendorSubscriptionRoutes from "./Routes/vendorSubscriptionRoutes.js";
 import { registerVendorSubscriptionCronJobs } from "./jobs/vendorSubscriptionCron.js";
+import notificationRoutes from "./Routes/notificationRoutes.js";
+import { registerNotificationCronJobs } from "./jobs/notificationCron.js";
 
 const app = express();
 
@@ -40,6 +42,7 @@ mongoose.connect("mongodb://localhost:27017/Book_My_Venue")
     // Start background cron jobs only after DB is ready
     registerSubscriptionCronJobs();
     registerVendorSubscriptionCronJobs();
+    registerNotificationCronJobs();
   })
   .catch(() => console.log("DB Error"));
 
@@ -57,6 +60,7 @@ app.use("/terms", termsRoutes);
 app.use("/complaints", complaintRoutes);
 app.use("/reports", reportRoutes);
 app.use("/todos", todoRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // ── Subscription System ─────────────────────────────────────
 app.use("/plans", planRoutes);           // Admin CRUD + public GET

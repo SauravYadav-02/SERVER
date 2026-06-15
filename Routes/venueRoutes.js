@@ -11,6 +11,7 @@ import { paginate } from "../utils/pagination.js";
 import RatingFeedback from "../models/RatingFeedbackModel.js";
 import { checkSubscription } from "../middleare/checkSubscription.js";
 import { isVendor } from "../middleare/isVendor.js";
+import { cancelBookingsForDeactivatedVenue } from "../services/venueDeactivationService.js";
 
 const router = express.Router();
 
@@ -732,6 +733,18 @@ router.patch("/:id/vendor-deactivate", isVendor, async (req, res) => {
 
     const start = new Date(suspensionStart);
     const end = new Date(suspensionEnd);
+
+    // Validate start date is not in the past
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const startCompare = new Date(start);
+    startCompare.setHours(0, 0, 0, 0);
+
+    if (startCompare < today) {
+      return res.status(400).json({ message: "Suspension start date cannot be in the past." });
+    }
+
     if (end < start) {
       return res.status(400).json({ message: "Suspension end date must be greater than or equal to start date." });
     }
@@ -743,7 +756,11 @@ router.patch("/:id/vendor-deactivate", isVendor, async (req, res) => {
     venue.deactivationReason = reason || "";
 
     await venue.save();
-    res.json(venue);
+    const result = await cancelBookingsForDeactivatedVenue(venue);
+    res.json({
+      ...venue.toObject(),
+      cancelledBookings: result.cancelledCount
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

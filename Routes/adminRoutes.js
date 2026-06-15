@@ -7,6 +7,7 @@ import { isAdmin } from "../middleare/isAdmin.js";
 import { paginate } from "../utils/pagination.js";
 import { suspendVendor, unsuspendVendor } from "../services/vendorService.js";
 import { suspendUser, unsuspendUser } from "../services/userService.js";
+import { cancelBookingsForDeactivatedVenue } from "../services/venueDeactivationService.js";
 
 const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
 
@@ -145,7 +146,11 @@ router.patch("/venues/:id/deactivate", isAdmin, async (req, res) => {
             return res.status(404).json({ message: "Venue not found" });
         }
 
-        res.json(buildVenueResponse(venue, req));
+        const result = await cancelBookingsForDeactivatedVenue(venue);
+        res.json({
+            ...buildVenueResponse(venue, req),
+            cancelledBookings: result.cancelledCount
+        });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
