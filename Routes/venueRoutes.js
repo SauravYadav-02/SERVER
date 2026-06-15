@@ -182,15 +182,16 @@ const autoReactivateExpiredSuspensions = async () => {
     await Venue.updateMany(
       {
         deactivated: true,
-        deactivatedBy: "vendor",
-        suspensionEnd: { $lt: now }
+        deactivatedBy: { $in: ["vendor", "admin"] },
+        suspensionEnd: { $ne: null, $lt: now }
       },
       {
         $set: {
           deactivated: false,
           deactivatedBy: null,
           suspensionStart: null,
-          suspensionEnd: null
+          suspensionEnd: null,
+          deactivationReason: ""
         }
       }
     );

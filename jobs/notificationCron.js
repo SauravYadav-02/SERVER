@@ -19,8 +19,8 @@ export const registerNotificationCronJobs = () => {
       const reactivatedResult = await Venue.updateMany(
         {
           deactivated: true,
-          deactivatedBy: "vendor",
-          suspensionEnd: { $lt: now }
+          deactivatedBy: { $in: ["vendor", "admin"] },
+          suspensionEnd: { $ne: null, $lt: now }
         },
         {
           $set: {
@@ -36,16 +36,17 @@ export const registerNotificationCronJobs = () => {
         console.log(`[Cron] Auto-reactivated ${reactivatedResult.modifiedCount} venue(s) with expired suspensions.`);
       }
 
-      // 2. Fetch all currently deactivated vendor venues
-      const vendorSuspendedVenues = await Venue.find({
+      // 2. Fetch all currently deactivated venues
+      const suspendedVenues = await Venue.find({
         deactivated: true,
-        deactivatedBy: "vendor"
+        deactivatedBy: { $in: ["vendor", "admin"] },
+        suspensionEnd: { $ne: null }   // only date-range deactivations need daily re-checks
       });
 
-      console.log(`[Cron] Checking cancellations for ${vendorSuspendedVenues.length} suspended vendor venue(s).`);
+      console.log(`[Cron] Checking cancellations for ${suspendedVenues.length} suspended venue(s).`);
 
       let totalCancelledBookings = 0;
-      for (const venue of vendorSuspendedVenues) {
+      for (const venue of suspendedVenues) {
         const result = await cancelBookingsForDeactivatedVenue(venue);
         if (result.cancelledCount > 0) {
           totalCancelledBookings += result.cancelledCount;

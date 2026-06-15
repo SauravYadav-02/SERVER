@@ -22,7 +22,18 @@ export const cancelBookingsForDeactivatedVenue = async (venue) => {
     let isAffected = false;
 
     if (venue.deactivatedBy === "admin") {
-      isAffected = true;
+      // If admin set a date range, only cancel bookings within that range
+      if (venue.suspensionStart && venue.suspensionEnd) {
+        const startStr = formatDate(venue.suspensionStart);
+        const endStr = formatDate(venue.suspensionEnd);
+        const bDate = booking.date; // "YYYY-MM-DD" string
+        if (bDate >= startStr && bDate <= endStr) {
+          isAffected = true;
+        }
+      } else {
+        // No date range = indefinite deactivation, cancel ALL bookings
+        isAffected = true;
+      }
     } else if (venue.deactivatedBy === "vendor") {
       // Convert dates to YYYY-MM-DD strings for comparison
       const startStr = formatDate(venue.suspensionStart);

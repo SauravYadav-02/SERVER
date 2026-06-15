@@ -128,16 +128,28 @@ router.put("/venues/:id/status", isAdmin, async (req, res) => {
 // Admin: Deactivate Venue (soft-delete)
 router.patch("/venues/:id/deactivate", isAdmin, async (req, res) => {
     try {
-        const { reason } = req.body;
-
+        const { reason, suspensionStart, suspensionEnd } = req.body;
+        // Validate date range if provided
+        let parsedStart = null;
+        let parsedEnd = null;
+        if (suspensionStart && suspensionEnd) {
+            parsedStart = new Date(suspensionStart);
+            parsedEnd = new Date(suspensionEnd);
+            if (isNaN(parsedStart.getTime()) || isNaN(parsedEnd.getTime())) {
+                return res.status(400).json({ message: "Invalid suspension dates." });
+            }
+            if (parsedEnd < parsedStart) {
+                return res.status(400).json({ message: "Suspension end date must be >= start date." });
+            }
+        }
         const venue = await Venue.findByIdAndUpdate(
             req.params.id,
             {
                 deactivated: true,
                 deactivatedBy: "admin",
                 deactivationReason: reason || "Deactivated by admin",
-                suspensionStart: null,
-                suspensionEnd: null
+                suspensionStart: parsedStart,
+                suspensionEnd: parsedEnd
             },
             { new: true }
         ).populate("vendorId", "fullName email phone businessName businessType address city state zip pincode status");
@@ -164,7 +176,9 @@ router.patch("/venues/:id/reactivate", isAdmin, async (req, res) => {
             {
                 deactivated: false,
                 deactivatedBy: null,
-                deactivationReason: ""
+                deactivationReason: "",
+                suspensionStart: null,
+                suspensionEnd: null
             },
             { new: true }
         ).populate("vendorId", "fullName email phone businessName businessType address city state zip pincode status");
