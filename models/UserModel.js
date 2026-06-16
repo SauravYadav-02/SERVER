@@ -57,6 +57,7 @@ const userSchema = new mongoose.Schema({
     acceptedTermsVersion: {
         type: String,
         required: [true, "You must accept the terms and conditions"],
+        default: "1.0.0"
     },
     acceptedTermsAt: {
         type: Date,

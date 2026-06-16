@@ -48,11 +48,15 @@ router.post("/", isUser, complaintUpload.array("attachments", 5), async (req, re
         const user = req.userId;
 
         // Auto-assign vendor if venue is specified but vendor is not
-        let vendorId = vendor;
+        let vendorId = vendor || null;
         if (venue && !vendorId) {
-            const foundVenue = await Venue.findById(venue);
-            if (foundVenue) {
-                vendorId = foundVenue.vendorId;
+            try {
+                const foundVenue = await Venue.findById(venue);
+                if (foundVenue && foundVenue.vendorId) {
+                    vendorId = foundVenue.vendorId;
+                }
+            } catch (err) {
+                console.error("Venue auto-assignment lookup error:", err);
             }
         }
 

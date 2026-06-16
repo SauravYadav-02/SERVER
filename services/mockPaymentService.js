@@ -339,6 +339,7 @@ export const getVendorBookings = async (vendorId) => {
       transactionId: booking.transactionId,
       timestamp: booking.paymentTimestamp || booking.createdAt,
       bookingStatus: booking.status,
+      cancellation: booking.cancellation || null,
     };
   });
 };

@@ -119,6 +119,15 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    cancellation: {
+      cancelledAt: { type: Date, default: null },
+      cancelledBy: { type: String, enum: ["user", "admin", "vendor", null], default: null },
+      refundTier: { type: String, enum: ["full", "50%", "25%", "none", null], default: null },
+      refundAmount: { type: Number, default: 0 },
+      refundStatus: { type: String, enum: ["pending", "processed", "none"], default: "none" },
+      reason: { type: String, default: "" },
+      daysBeforeEvent: { type: Number, default: null },
+    },
   },
   { timestamps: true }
 );
