@@ -38,6 +38,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Request logger middleware
+app.use((req, res, next) => {
+  console.log(`[Request] ${req.method} ${req.url}`);
+  next();
+});
+
 mongoose.connect("mongodb://localhost:27017/Book_My_Venue")
   .then(() => {
     console.log("DB Connected");
@@ -73,6 +79,12 @@ app.use("/payments", paymentHistoryRoutes); // Payment history
 app.use("/api/admin/plans", adminPlanRoutes);
 app.use("/api/vendor/subscription", vendorSubscriptionRoutes);
 app.use("/api/remaining-payment", remainingPaymentRoutes);
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error("Global Error Caught:", err);
+  res.status(500).json({ error: err.message || "Internal Server Error" });
+});
 
 app.listen(3000, "0.0.0.0", () => {
   console.log("Server running on port 3000");

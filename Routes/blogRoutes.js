@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import Blog from "../models/BlogModel.js";
 import { isVendor } from "../middleare/isVendor.js";
 import { isUser } from "../middleare/isUser.js";
@@ -223,64 +224,173 @@ router.get("/vendor/my", isVendor, async (req, res) => {
 // ADMIN ROUTES (isAdmin middleware)
 // ==========================================
 
-// 1. Get all blogs (Paginated with status/search filters)
+// 1. Fetch Blogs (with filters/search/pagination)
 router.get("/admin", isAdmin, async (req, res) => {
   try {
     const { page, limit, search, status } = req.query;
 
-    const query = { deleted: false };
-    
+    const query = {};
     if (status) {
       query.status = status;
     }
 
     if (search) {
       const regex = new RegExp(search.trim(), "i");
+      const matchingVendors = await mongoose.model("Vendor").find({
+        $or: [
+          { fullName: regex },
+          { businessName: regex }
+        ]
+      }).select("_id");
+      const vendorIds = matchingVendors.map(v => v._id);
+
       query.$or = [
         { title: { $regex: regex } },
-        { tags: { $regex: regex } }
+        { tags: { $regex: regex } },
+        { vendorId: { $in: vendorIds } }
       ];
+    }
+
+    if (req.query.deleted !== undefined) {
+      query.deleted = req.query.deleted === "true";
     }
 
     const paginationResult = await paginate(Blog, query, {
       page,
       limit,
-      populate: { path: "vendorId", select: "fullName businessName" },
+      populate: { path: "vendorId", select: "fullName businessName email phone" },
       sort: { createdAt: -1 }
     });
 
     paginationResult.data = paginationResult.data.map(blog => formatBlogResponse(blog, req));
     res.json(paginationResult);
   } catch (error) {
-    res.status(500).json({ message: "Failed to fetch admin blogs", error: error.message });
+    console.error("ADMIN FETCH BLOGS ERROR:", error);
+    res.status(500).json({ message: "Failed to fetch blogs for admin", error: error.message });
   }
 });
 
-// 2. Update blog status (Approve/Reject/Suspend)
-router.put("/admin/:id/status", isAdmin, async (req, res) => {
+// 2. Approve a Blog
+router.patch("/admin/:id/approve", isAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, adminNote } = req.body;
+    const blog = await Blog.findByIdAndUpdate(
+      id,
+      { status: "approved", adminNote: "" },
+      { new: true }
+    ).populate("vendorId", "fullName businessName email phone");
 
-    if (!["pending", "approved", "rejected", "suspended"].includes(status)) {
-      return res.status(400).json({ message: "Invalid status value" });
-    }
-
-    const blog = await Blog.findById(id);
-    if (!blog || blog.deleted) {
+    if (!blog) {
       return res.status(404).json({ message: "Blog not found" });
     }
 
-    blog.status = status;
-    if (adminNote !== undefined) {
-      blog.adminNote = adminNote;
-    }
-
-    await blog.save();
-    
     res.json(formatBlogResponse(blog, req));
   } catch (error) {
-    res.status(500).json({ message: "Failed to update blog status", error: error.message });
+    res.status(500).json({ message: "Failed to approve blog", error: error.message });
+  }
+});
+
+// 3. Reject a Blog
+router.patch("/admin/:id/reject", isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const blog = await Blog.findByIdAndUpdate(
+      id,
+      { status: "rejected", adminNote: reason || "Rejected by admin" },
+      { new: true }
+    ).populate("vendorId", "fullName businessName email phone");
+
+    if (!blog) {
+      return res.status(404).json({ message: "Blog not found" });
+    }
+
+    res.json(formatBlogResponse(blog, req));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to reject blog", error: error.message });
+  }
+});
+
+// 4. Suspend a Blog
+router.patch("/admin/:id/suspend", isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const blog = await Blog.findByIdAndUpdate(
+      id,
+      { status: "suspended", adminNote: reason || "Suspended by admin" },
+      { new: true }
+    ).populate("vendorId", "fullName businessName email phone");
+
+    if (!blog) {
+      return res.status(404).json({ message: "Blog not found" });
+    }
+
+    res.json(formatBlogResponse(blog, req));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to suspend blog", error: error.message });
+  }
+});
+
+// 5. Restore to Pending
+router.patch("/admin/:id/restore", isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const blog = await Blog.findByIdAndUpdate(
+      id,
+      { status: "pending", adminNote: "" },
+      { new: true }
+    ).populate("vendorId", "fullName businessName email phone");
+
+    if (!blog) {
+      return res.status(404).json({ message: "Blog not found" });
+    }
+
+    res.json(formatBlogResponse(blog, req));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to restore blog status", error: error.message });
+  }
+});
+
+// 6. Soft Delete
+router.patch("/admin/:id/delete", isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const blog = await Blog.findByIdAndUpdate(
+      id,
+      { deleted: true },
+      { new: true }
+    ).populate("vendorId", "fullName businessName email phone");
+
+    if (!blog) {
+      return res.status(404).json({ message: "Blog not found" });
+    }
+
+    res.json(formatBlogResponse(blog, req));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to soft delete blog", error: error.message });
+  }
+});
+
+// 7. Undelete
+router.patch("/admin/:id/undelete", isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const blog = await Blog.findByIdAndUpdate(
+      id,
+      { deleted: false },
+      { new: true }
+    ).populate("vendorId", "fullName businessName email phone");
+
+    if (!blog) {
+      return res.status(404).json({ message: "Blog not found" });
+    }
+
+    res.json(formatBlogResponse(blog, req));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to undelete blog", error: error.message });
   }
 });
 
