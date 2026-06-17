@@ -22,6 +22,8 @@ import termsRoutes from "./Routes/termsRoutes.js";
 import complaintRoutes from "./Routes/complaintRoutes.js";
 import reportRoutes from "./Routes/reportRoutes.js";
 import todoRoutes from "./Routes/todoRoutes.js";
+import blogRoutes from "./Routes/blogRoutes.js";
+
 
 import remainingPaymentRoutes from "./Routes/remainingPaymentRoutes.js";
 import { registerSubscriptionCronJobs } from "./jobs/subscriptionCron.js";
@@ -61,6 +63,8 @@ app.use("/complaints", complaintRoutes);
 app.use("/reports", reportRoutes);
 app.use("/todos", todoRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/blogs", blogRoutes);
+
 
 // ── Subscription System ─────────────────────────────────────
 app.use("/plans", planRoutes);           // Admin CRUD + public GET
