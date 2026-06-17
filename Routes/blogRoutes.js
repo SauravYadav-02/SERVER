@@ -2,6 +2,7 @@ import express from "express";
 import Blog from "../models/BlogModel.js";
 import { isVendor } from "../middleare/isVendor.js";
 import { isUser } from "../middleare/isUser.js";
+import { isAdmin } from "../middleare/isAdmin.js";
 import { blogUpload } from "../middleare/blogUpload.js";
 import { paginate } from "../utils/pagination.js";
 
@@ -215,6 +216,71 @@ router.get("/vendor/my", isVendor, async (req, res) => {
     res.json(paginationResult);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch vendor blogs", error: error.message });
+  }
+});
+
+// ==========================================
+// ADMIN ROUTES (isAdmin middleware)
+// ==========================================
+
+// 1. Get all blogs (Paginated with status/search filters)
+router.get("/admin", isAdmin, async (req, res) => {
+  try {
+    const { page, limit, search, status } = req.query;
+
+    const query = { deleted: false };
+    
+    if (status) {
+      query.status = status;
+    }
+
+    if (search) {
+      const regex = new RegExp(search.trim(), "i");
+      query.$or = [
+        { title: { $regex: regex } },
+        { tags: { $regex: regex } }
+      ];
+    }
+
+    const paginationResult = await paginate(Blog, query, {
+      page,
+      limit,
+      populate: { path: "vendorId", select: "fullName businessName" },
+      sort: { createdAt: -1 }
+    });
+
+    paginationResult.data = paginationResult.data.map(blog => formatBlogResponse(blog, req));
+    res.json(paginationResult);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch admin blogs", error: error.message });
+  }
+});
+
+// 2. Update blog status (Approve/Reject/Suspend)
+router.put("/admin/:id/status", isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNote } = req.body;
+
+    if (!["pending", "approved", "rejected", "suspended"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status value" });
+    }
+
+    const blog = await Blog.findById(id);
+    if (!blog || blog.deleted) {
+      return res.status(404).json({ message: "Blog not found" });
+    }
+
+    blog.status = status;
+    if (adminNote !== undefined) {
+      blog.adminNote = adminNote;
+    }
+
+    await blog.save();
+    
+    res.json(formatBlogResponse(blog, req));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update blog status", error: error.message });
   }
 });
 
