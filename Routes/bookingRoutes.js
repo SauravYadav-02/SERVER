@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import Booking from "../models/BookingModel.js";
 import { createBookingWithUpfrontPayment } from "../services/mockPaymentService.js";
 import { getVendorSubscriptionStatus } from "../services/subscriptionService.js";
@@ -183,25 +184,49 @@ router.put("/:bookingId/status", async (req, res) => {
 // Get all bookings (admin route - Paginated)
 router.get("/", isAdmin, async (req, res) => {
   try {
-    const { page, limit, status } = req.query;
+    const { page, limit, search, status, sortBy, sortOrder } = req.query;
 
     const query = {};
     if (status) query.status = status;
 
+    if (search) {
+      const regex = new RegExp(search.trim(), "i");
+
+      // Find matching users and venues first
+      const [matchingUsers, matchingVenues] = await Promise.all([
+        mongoose.model("User").find({
+          $or: [{ name: regex }, { email: regex }]
+        }).select("_id").lean(),
+        mongoose.model("Venue").find({ name: regex }).select("_id").lean(),
+      ]);
+
+      const userIds = matchingUsers.map(u => u._id);
+      const venueIds = matchingVenues.map(v => v._id);
+
+      query.$or = [
+        { userId: { $in: userIds } },
+        { venueId: { $in: venueIds } },
+      ];
+    }
+
+    const allowedSortFields = ["createdAt", "date", "cost", "finalAmount", "status"];
     const paginationResult = await paginate(Booking, query, {
       page,
       limit,
+      sortBy,
+      sortOrder,
+      allowedSortFields,
       populate: [
         { path: "userId", select: "name email phone" },
         { path: "vendorId", select: "fullName email phone businessName businessType" },
         { path: "venueId", select: "name address city state zip country" }
       ],
-      sort: { createdAt: -1 }
+      sort: undefined
     });
 
     res.json(paginationResult);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch all bookings" });
+    res.status(500).json({ error: "Failed to fetch all bookings: " + error.message });
   }
 });
 

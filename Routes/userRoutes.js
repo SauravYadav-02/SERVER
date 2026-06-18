@@ -78,33 +78,39 @@ router.post("/login", async (req, res) => {
 
 // Get all users (Admin - Paginated)
 router.get("/", isAdmin, async (req, res) => {
-    try {
-        const { page, limit, search } = req.query;
-        
-        const query = { deleted: { $ne: true } };
-        if (search) {
-            query.$or = [
-                { name: { $regex: search, $options: "i" } },
-                { email: { $regex: search, $options: "i" } },
-            ];
-        }
+  try {
+    const { page, limit, search, status, sortBy, sortOrder } = req.query;
 
-        const paginationResult = await paginate(User, query, {
-            page,
-            limit,
-            sort: { createdAt: -1 }
-        });
-
-        paginationResult.data = paginationResult.data.map((user) => {
-            const u = buildUserResponse(user, req);
-            delete u.password;
-            return u;
-        });
-        
-        res.json(paginationResult);
-    } catch (error) {
-        res.status(500).json({ message: "Failed to retrieve users", error: error.message });
+    const query = { deleted: { $ne: true } };
+    if (status) query.status = status;
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+        { city: { $regex: search, $options: "i" } },
+      ];
     }
+
+    const paginationResult = await paginate(User, query, {
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      allowedSortFields: ["createdAt", "name", "email", "city"],
+      sort: undefined
+    });
+
+    paginationResult.data = paginationResult.data.map((user) => {
+      const u = buildUserResponse(user, req);
+      delete u.password;
+      return u;
+    });
+
+    res.json(paginationResult);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to retrieve users", error: error.message });
+  }
 });
 
 // Get a specific user by ID

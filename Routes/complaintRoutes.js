@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import Complaint from "../models/ComplaintModel.js";
 import ComplaintMessage from "../models/ComplaintMessageModel.js";
 import User from "../models/UserModel.js";
@@ -98,54 +99,50 @@ router.get("/", async (req, res) => {
             return res.status(401).json({ message: "Unauthorized. Missing identifier headers." });
         }
 
-        const { page, limit } = req.query;
+        const { page, limit, search, sortBy, sortOrder } = req.query;
 
-        if (page || limit) {
-            const paginationResult = await paginate(Complaint, query, {
-                page,
-                limit,
-                populate: [
-                    { path: "user", select: "name email phone" },
-                    { path: "vendor", select: "fullName businessName email" },
-                    { path: "venue", select: "name city" }
-                ],
-                sort: { createdAt: -1 }
-            });
+        if (adminId && search) {
+            const regex = new RegExp(search.trim(), "i");
+            const matchingUsers = await mongoose.model("User").find({
+                name: regex
+            }).select("_id").lean();
+            const userIds = matchingUsers.map(u => u._id);
 
-            // Map attachment full URLs
-            paginationResult.data = paginationResult.data.map(complaint => {
-                if (complaint.attachments) {
-                    complaint.attachments = complaint.attachments.map(att => 
-                        att.startsWith("http") ? att : `${req.protocol}://${req.get("host")}/${att}`
-                    );
-                }
-                return complaint;
-            });
-
-            return res.json({
-                success: true,
-                ...paginationResult
-            });
+            query.$or = [
+                { title: regex },
+                { description: regex },
+                { user: { $in: userIds } },
+            ];
         }
 
-        const complaints = await Complaint.find(query)
-            .populate("user", "name email phone")
-            .populate("vendor", "fullName businessName email")
-            .populate("venue", "name city")
-            .sort({ createdAt: -1 });
+        const paginationResult = await paginate(Complaint, query, {
+            page,
+            limit,
+            sortBy,
+            sortOrder,
+            allowedSortFields: ["createdAt", "status", "title"],
+            populate: [
+                { path: "user", select: "name email phone" },
+                { path: "vendor", select: "fullName businessName email" },
+                { path: "venue", select: "name city" }
+            ],
+            sort: undefined
+        });
 
         // Map attachment full URLs
-        const formattedComplaints = complaints.map(complaint => {
-            const compObj = complaint.toObject();
-            if (compObj.attachments) {
-                compObj.attachments = compObj.attachments.map(att => 
+        paginationResult.data = paginationResult.data.map(complaint => {
+            if (complaint.attachments) {
+                complaint.attachments = complaint.attachments.map(att => 
                     att.startsWith("http") ? att : `${req.protocol}://${req.get("host")}/${att}`
                 );
             }
-            return compObj;
+            return complaint;
         });
 
-        res.json(formattedComplaints);
+        res.json({
+            success: true,
+            ...paginationResult
+        });
     } catch (error) {
         res.status(500).json({ message: "Failed to retrieve complaints", error: error.message });
     }

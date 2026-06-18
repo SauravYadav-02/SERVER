@@ -19,7 +19,7 @@ const router = express.Router();
 // ============================
 router.get("/", isAdmin, async (req, res) => {
     try {
-        const { page, limit, search, status } = req.query;
+        const { page, limit, search, status, sortBy, sortOrder } = req.query;
 
         const query = { deleted: { $ne: true } };
         if (status) query.status = status;
@@ -28,13 +28,17 @@ router.get("/", isAdmin, async (req, res) => {
                 { fullName: { $regex: search, $options: "i" } },
                 { businessName: { $regex: search, $options: "i" } },
                 { email: { $regex: search, $options: "i" } },
+                { phone: { $regex: search, $options: "i" } },
             ];
         }
 
         const paginationResult = await paginate(Vendor, query, {
             page,
             limit,
-            sort: { createdAt: -1 }
+            sortBy,
+            sortOrder,
+            allowedSortFields: ["createdAt", "fullName", "businessName", "email"],
+            sort: undefined
         });
 
         paginationResult.data = paginationResult.data.map(vendor => ({

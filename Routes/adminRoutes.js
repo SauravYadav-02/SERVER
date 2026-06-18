@@ -56,7 +56,7 @@ router.post("/login", async (req,res)=>{
 // Admin: Get all venues with vendor details (Paginated)
 router.get("/venues", isAdmin, async (req, res) => {
     try {
-        const { page, limit, search, status } = req.query;
+        const { page, limit, search, status, sortBy, sortOrder } = req.query;
         
         const query = {};
         if (status) query.status = status;
@@ -77,8 +77,11 @@ router.get("/venues", isAdmin, async (req, res) => {
         const paginationResult = await paginate(Venue, query, {
             page,
             limit,
+            sortBy,
+            sortOrder,
+            allowedSortFields: ["createdAt", "name", "city", "pricePerDay", "capacity"],
             populate: { path: "vendorId", select: "fullName email phone businessName businessType address city state zip pincode status" },
-            sort: { createdAt: -1 }
+            sort: undefined
         });
 
         paginationResult.data = paginationResult.data.map((venue) => buildVenueResponse(venue, req));
@@ -196,22 +199,32 @@ router.patch("/venues/:id/reactivate", isAdmin, async (req, res) => {
 // Admin: Get all reviews across all venues (Paginated)
 router.get("/reviews", isAdmin, async (req, res) => {
     try {
-        const { page, limit, search, status } = req.query;
+        const { page, limit, search, status, sortBy, sortOrder } = req.query;
 
         const query = {};
         if (status) query.status = status;
         if (search) {
-            query.feedback = { $regex: search, $options: "i" };
+            const regex = new RegExp(search.trim(), "i");
+            const matchingVenues = await mongoose.model("Venue").find({ name: regex }).select("_id").lean();
+            const venueIds = matchingVenues.map(v => v._id);
+
+            query.$or = [
+                { feedback: regex },
+                { venueId: { $in: venueIds } },
+            ];
         }
 
         const paginationResult = await paginate(RatingFeedback, query, {
             page,
             limit,
+            sortBy,
+            sortOrder,
+            allowedSortFields: ["createdAt", "rating", "status"],
             populate: [
                 { path: "userId", select: "name email" },
                 { path: "venueId", select: "name" }
             ],
-            sort: { createdAt: -1 }
+            sort: undefined
         });
 
         paginationResult.data = paginationResult.data.map(r => ({

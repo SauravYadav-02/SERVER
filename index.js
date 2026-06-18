@@ -23,6 +23,7 @@ import complaintRoutes from "./Routes/complaintRoutes.js";
 import reportRoutes from "./Routes/reportRoutes.js";
 import todoRoutes from "./Routes/todoRoutes.js";
 import blogRoutes from "./Routes/blogRoutes.js";
+import dashboardRoutes from "./Routes/dashboardRoutes.js";
 
 
 import remainingPaymentRoutes from "./Routes/remainingPaymentRoutes.js";
@@ -70,6 +71,7 @@ app.use("/reports", reportRoutes);
 app.use("/todos", todoRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/blogs", blogRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 
 // ── Subscription System ─────────────────────────────────────

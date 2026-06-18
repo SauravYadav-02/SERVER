@@ -12,7 +12,12 @@ export const paginate = async (model, query = {}, options = {}) => {
   const limit = Math.max(1, parseInt(options.limit) || 10);
   const skip = (page - 1) * limit;
 
-  const sort = options.sort || { createdAt: -1 };
+  // Sort support
+  const allowedSortFields = options.allowedSortFields || ["createdAt", "updatedAt"];
+  const sortBy = allowedSortFields.includes(options.sortBy) ? options.sortBy : "createdAt";
+  const sortOrder = options.sortOrder === "asc" ? 1 : -1;
+  const sort = options.sort || { [sortBy]: sortOrder };
+
   const populate = options.populate || "";
 
   const [totalRecords, data] = await Promise.all([

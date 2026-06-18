@@ -9,6 +9,8 @@ import {
 } from "../controllers/paymentHistoryController.js";
 import { isAdmin } from "../middleare/isAdmin.js";
 import { isVendor } from "../middleare/isVendor.js";
+import PaymentHistory from "../models/PaymentHistoryModel.js";
+import { paginate } from "../utils/pagination.js";
 
 const router = express.Router();
 
@@ -33,7 +35,54 @@ router.post("/", isAdmin, createPaymentHistoryEntry);
 router.get("/admin-vendor", isAdmin, getAdminVendorPayments);
 
 // GET /payments — all payment history (admin only)
-router.get("/", isAdmin, getAllPayments);
+router.get("/", isAdmin, async (req, res) => {
+  try {
+    const { page, limit, search, sortBy, sortOrder } = req.query;
+
+    const query = {};
+    if (search) {
+      query.$or = [
+        { transactionId: { $regex: search, $options: "i" } },
+        { userName: { $regex: search, $options: "i" } },
+        { userEmail: { $regex: search, $options: "i" } },
+        { vendorName: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const paginationResult = await paginate(PaymentHistory, query, {
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      allowedSortFields: ["createdAt", "amount", "paymentTimestamp"],
+      populate: [
+        { path: "vendorId", select: "fullName email phone businessName businessType address state pincode status" },
+        { path: "userId", select: "name username email phone" },
+        { path: "adminId", select: "username name fullName" }
+      ],
+      sort: undefined
+    });
+
+    const formatAdminVendorTransaction = (record) => {
+      const data = record.toObject ? record.toObject() : record;
+      const admin = data.adminId || null;
+      return {
+        ...data,
+        adminName: admin?.name || admin?.fullName || admin?.username || null,
+        vendorDetails: data.vendorId || null,
+      };
+    };
+
+    paginationResult.data = paginationResult.data.map(formatAdminVendorTransaction);
+
+    res.status(200).json({
+      success: true,
+      ...paginationResult
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to retrieve payment history", error: error.message });
+  }
+});
 
 // ── Shared / Internal ─────────────────────────────────────────────────────────
 
