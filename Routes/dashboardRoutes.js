@@ -56,7 +56,7 @@ router.get("/summary", isAdmin, async (req, res) => {
             as: "venue"
           }
         },
-        { $unwind: "$venue" },
+        { $unwind: { path: "$venue", preserveNullAndEmpty: false } },
         { $project: { name: "$venue.name", revenue: 1, _id: 0 } }
       ]),
 

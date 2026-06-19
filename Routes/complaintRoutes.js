@@ -101,7 +101,7 @@ router.get("/", async (req, res) => {
 
         const { page, limit, search, sortBy, sortOrder } = req.query;
 
-        if (adminId && search) {
+        if (search) {
             const regex = new RegExp(search.trim(), "i");
             const matchingUsers = await mongoose.model("User").find({
                 name: regex

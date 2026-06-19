@@ -32,11 +32,5 @@ export const paginate = async (model, query = {}, options = {}) => {
 
   const totalPages = Math.ceil(totalRecords / limit);
 
-  return {
-    data,
-    page,
-    limit,
-    totalRecords,
-    totalPages,
-  };
+  return { data, page, limit, totalRecords, totalPages };
 };
