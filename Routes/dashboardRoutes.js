@@ -69,7 +69,7 @@ router.get("/summary", isAdmin, async (req, res) => {
       Booking.countDocuments({ createdAt: { $gte: twoWeeksAgo, $lt: oneWeekAgo } }),
 
       mongoose.model("Subscription").aggregate([
-        { $match: { status: { $in: ["active", "grace"] } } },
+        { $match: { status: { $in: ["ACTIVE", "active", "GRACE", "grace"] } } },
         { $group: { _id: "$planSnapshot.name", count: { $sum: 1 }, totalEarned: { $sum: "$planSnapshot.price" } } },
         { $project: { name: "$_id", count: 1, totalEarned: 1, _id: 0 } },
         { $sort: { totalEarned: -1 } }

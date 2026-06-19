@@ -37,9 +37,14 @@ router.get("/admin-vendor", isAdmin, getAdminVendorPayments);
 // GET /payments — all payment history (admin only)
 router.get("/", isAdmin, async (req, res) => {
   try {
-    const { page, limit, search, sortBy, sortOrder } = req.query;
+    const { page, limit, search, sortBy, sortOrder, startDate, endDate } = req.query;
 
     const query = {};
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
     if (search) {
       query.$or = [
         { transactionId: { $regex: search, $options: "i" } },

@@ -60,6 +60,29 @@ router.get("/", isAdmin, async (req, res) => {
 });
 
 // ============================
+// 🔹 Get Vendor Stats (Admin - KPI)
+// ============================
+router.get("/stats", isAdmin, async (req, res) => {
+    try {
+        const [total, approved, pending, suspended] = await Promise.all([
+            Vendor.countDocuments({ deleted: { $ne: true } }),
+            Vendor.countDocuments({ status: "approved", deleted: { $ne: true } }),
+            Vendor.countDocuments({ status: "pending", deleted: { $ne: true } }),
+            Vendor.countDocuments({ status: "suspended", deleted: { $ne: true } }),
+        ]);
+
+        res.json({
+            total,
+            approved,
+            pending,
+            suspended
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Failed to retrieve vendor statistics", error: err.message });
+    }
+});
+
+// ============================
 // 🔹 Get Single Vendor (with files)
 // ============================
 const fixPath = (filePath) => filePath.replace(/\\/g, "/");

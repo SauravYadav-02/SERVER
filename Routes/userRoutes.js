@@ -113,6 +113,26 @@ router.get("/", isAdmin, async (req, res) => {
   }
 });
 
+// Get User Stats (Admin - KPI)
+router.get("/stats", isAdmin, async (req, res) => {
+  try {
+    const [total, verified, suspended] = await Promise.all([
+      User.countDocuments({ deleted: { $ne: true } }),
+      User.countDocuments({ status: "active", deleted: { $ne: true } }),
+      User.countDocuments({ status: "suspended", deleted: { $ne: true } }),
+    ]);
+
+    res.json({
+      total,
+      verified,
+      unverified: 0,
+      suspended,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to retrieve user statistics", error: error.message });
+  }
+});
+
 // Get a specific user by ID
 router.get("/:id", async (req, res) => {
     try {

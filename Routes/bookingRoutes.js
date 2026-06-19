@@ -181,13 +181,64 @@ router.put("/:bookingId/status", async (req, res) => {
   }
 });
 
+// Get Booking Stats (Admin - KPI)
+router.get("/stats", isAdmin, async (req, res) => {
+  try {
+    const stats = await Booking.aggregate([
+      {
+        $facet: {
+          financials: [
+            { $match: { status: { $nin: ["cancelled", "rejected", "failed"] } } },
+            {
+              $group: {
+                _id: null,
+                totalRevenue: { $sum: "$totalBookingAmount" },
+                collected: { $sum: "$amountPaid" },
+                outstanding: { $sum: "$remainingAmount" }
+              }
+            }
+          ],
+          todayCount: [
+            {
+              $match: {
+                createdAt: {
+                  $gte: new Date(new Date().setHours(0, 0, 0, 0))
+                }
+              }
+            },
+            { $count: "count" }
+          ]
+        }
+      }
+    ]);
+
+    const financials = stats[0].financials[0] || { totalRevenue: 0, collected: 0, outstanding: 0 };
+    const todayCount = stats[0].todayCount[0]?.count || 0;
+
+    res.json({
+      totalRevenue: financials.totalRevenue,
+      collected: financials.collected,
+      outstanding: financials.outstanding,
+      todayCount
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to retrieve booking statistics: " + error.message });
+  }
+});
+
 // Get all bookings (admin route - Paginated)
 router.get("/", isAdmin, async (req, res) => {
   try {
-    const { page, limit, search, status, sortBy, sortOrder } = req.query;
+    const { page, limit, search, status, sortBy, sortOrder, startDate, endDate } = req.query;
 
     const query = {};
     if (status) query.status = status;
+
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
 
     if (search) {
       const regex = new RegExp(search.trim(), "i");
