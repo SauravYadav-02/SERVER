@@ -125,8 +125,6 @@ router.post(
     ]),
     async (req, res) => {
         try {
-            
-
             const governmentIdFile = req.files?.governmentId?.[0]?.path;
             const licenseDocFile = req.files?.licenseDoc?.[0]?.path;
 
@@ -145,23 +143,130 @@ router.post(
                 });
             }
 
+            // Check if request is performed by an admin
+            const isAdminRegister = !!(req.headers.adminid || req.headers["adminid"]);
+            const status = isAdminRegister ? "approved" : "pending";
+
+            // If registered by admin, validate username uniqueness if provided
+            if (isAdminRegister && req.body.username) {
+                const exists = await Vendor.findOne({ username: req.body.username });
+                if (exists) {
+                    return res.status(400).json({
+                        message: `Username "${req.body.username}" already exists. Please choose a different username.`
+                    });
+                }
+            }
+
             const vendor = new Vendor({
                 ...req.body,
                 governmentId: governmentIdFile,
                 licenseDoc: licenseDocFile,
-                status: "pending"
+                status,
+                adminMessage: isAdminRegister ? "Auto-approved by Admin" : ""
             });
 
             await vendor.save();
 
+            if (isAdminRegister) {
+                await sendEmail(
+                    vendor.email,
+                    "Vendor Account Approved",
+                    `Your vendor account has been registered and approved by the administrator.\n\n${req.body.username ? `Username: ${req.body.username}\n` : ''}You can now log in to your dashboard.`
+                );
+            } else {
+                await sendEmail(
+                    vendor.email,
+                    "Vendor Registration",
+                    `Your Vendor ID Request is submitted. Wait for admin approval.`
+                );
+            }
+
+            res.status(201).json({
+                message: isAdminRegister ? "Vendor Registered and Approved" : "Vendor Registered",
+                vendor
+            });
+
+        } catch (err) {
+            console.log(err);
+            res.status(500).json({
+                message: err.message || "Server Error"
+            });
+        }
+    }
+);
+
+// ============================
+// 🔹 Admin Manually Create Vendor (Auto-Approve & Welcome Email)
+// ============================
+router.post(
+    "/admin-create",
+    isAdmin,
+    upload.fields([
+        { name: "governmentId", maxCount: 1 },
+        { name: "licenseDoc", maxCount: 1 }
+    ]),
+    async (req, res) => {
+        try {
+            const governmentIdFile = req.files?.governmentId?.[0]?.path;
+            const licenseDocFile = req.files?.licenseDoc?.[0]?.path;
+
+            if (!governmentIdFile || !licenseDocFile) {
+                return res.status(400).json({
+                    message: "Both governmentId and licenseDoc are required"
+                });
+            }
+
+            // Check if email already exists
+            const existingEmail = req.body.email ? req.body.email.toLowerCase().trim() : "";
+            const existingVendorByEmail = await Vendor.findOne({ email: existingEmail });
+            if (existingVendorByEmail) {
+                return res.status(400).json({
+                    message: `Email "${req.body.email}" is already registered. Please use a different email.`
+                });
+            }
+
+            // Validate username uniqueness (required for admin-create)
+            const username = req.body.username;
+            if (!username) {
+                return res.status(400).json({
+                    message: "Username is required"
+                });
+            }
+            const existingVendorByUsername = await Vendor.findOne({ username });
+            if (existingVendorByUsername) {
+                return res.status(400).json({
+                    message: `Username "${username}" already exists. Please choose a different username.`
+                });
+            }
+
+            const password = req.body.password;
+            if (!password) {
+                return res.status(400).json({
+                    message: "Password is required"
+                });
+            }
+
+            const vendor = new Vendor({
+                ...req.body,
+                governmentId: governmentIdFile,
+                licenseDoc: licenseDocFile,
+                status: "approved",
+                username,
+                password,
+                adminMessage: "Manually created by Admin"
+            });
+
+            await vendor.save();
+
+            // Send welcome email immediately
             await sendEmail(
                 vendor.email,
-                "Vendor Registration",
-                `Your Vendor ID Request is submitted. Wait for admin approval.`
+                "Welcome to Book My Venue!",
+                `Your vendor account has been created by the administrator.\n\nUsername: ${username}\nPassword: ${password}`
             );
 
             res.status(201).json({
-                message: "Vendor Registered",
+                message: "Vendor Created & Approved",
                 vendor
             });
 

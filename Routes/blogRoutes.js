@@ -37,7 +37,7 @@ router.post(
   isVendor,
   blogUpload.fields([
     { name: "coverImage", maxCount: 1 },
-    { name: "images", maxCount: 5 }
+    { name: "images", maxCount: 10 }
   ]),
   async (req, res) => {
     try {
@@ -95,7 +95,7 @@ router.put(
   isVendor,
   blogUpload.fields([
     { name: "coverImage", maxCount: 1 },
-    { name: "images", maxCount: 5 }
+    { name: "images", maxCount: 10 }
   ]),
   async (req, res) => {
     try {
