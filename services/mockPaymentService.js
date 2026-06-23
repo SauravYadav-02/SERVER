@@ -105,7 +105,7 @@ export const createBookingWithUpfrontPayment = async (payload) => {
   const [user, vendor, venue] = await Promise.all([
     User.findById(userId).select("_id status deleted"),
     Vendor.findById(vendorId).select("_id status deleted"),
-    Venue.findById(venueId).select("_id vendorId isSubscriptionActive availableFrom pricePerDay vegPrice nonVegPrice capacity"),
+    Venue.findById(venueId).select("_id vendorId isSubscriptionActive availableFrom pricePerDay vegPrice nonVegPrice bothPrice capacity"),
   ]);
 
   if (!user || user.deleted) {
@@ -170,6 +170,8 @@ export const createBookingWithUpfrontPayment = async (payload) => {
     perPlatePrice = venue.vegPrice || 0;
   } else if (foodType === "nonveg") {
     perPlatePrice = venue.nonVegPrice || 0;
+  } else if (foodType === "both") {
+    perPlatePrice = venue.bothPrice || venue.nonVegPrice || venue.vegPrice || 0;
   }
   const foodTotal = toMoney(guests * perPlatePrice);
   const finalAmount = calculatedVenueAmount + foodTotal;

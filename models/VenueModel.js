@@ -24,6 +24,10 @@ const venueSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    bothPrice: {
+      type: Number,
+      default: null,
+    },
 
     address: String,
     city: String,

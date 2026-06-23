@@ -96,7 +96,7 @@ const bookingSchema = new mongoose.Schema(
     },
     selectedFoodType: {
       type: String,
-      enum: ["veg", "nonveg", "none"],
+      enum: ["veg", "nonveg", "both", "none"],
       default: "none",
     },
     guestCount: {

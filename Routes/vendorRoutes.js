@@ -14,50 +14,60 @@ const router = express.Router();
 // 🔹 Generate Vendor ID
 // ============================
 
+const fixPath = (filePath = "") => filePath.replace(/\\/g, "/");
+
+const buildVendorResponse = (vendor, req) => {
+  const response = vendor.toObject ? vendor.toObject() : vendor;
+
+  if (response.governmentId && !response.governmentId.startsWith("http")) {
+    response.governmentId = `${req.protocol}://${req.get("host")}/${fixPath(response.governmentId)}`;
+  }
+  if (response.licenseDoc && !response.licenseDoc.startsWith("http")) {
+    response.licenseDoc = `${req.protocol}://${req.get("host")}/${fixPath(response.licenseDoc)}`;
+  }
+
+  return response;
+};
+
 // ============================
 // 🔹 Get All Vendors (Admin - Paginated)
 // ============================
 router.get("/", isAdmin, async (req, res) => {
-    try {
-        const { page, limit, search, status, sortBy, sortOrder } = req.query;
+  try {
+    const { page, limit, search, status, sortBy, sortOrder } = req.query;
 
-        const query = { deleted: { $ne: true } };
-        if (status) query.status = status;
-        if (search) {
-            query.$or = [
-                { fullName: { $regex: search, $options: "i" } },
-                { businessName: { $regex: search, $options: "i" } },
-                { email: { $regex: search, $options: "i" } },
-                { phone: { $regex: search, $options: "i" } },
-            ];
-        }
-
-        const paginationResult = await paginate(Vendor, query, {
-            page,
-            limit,
-            sortBy,
-            sortOrder,
-            allowedSortFields: ["createdAt", "fullName", "businessName", "email"],
-            sort: undefined
-        });
-
-        paginationResult.data = paginationResult.data.map(vendor => ({
-            ...vendor,
-            governmentId: vendor.governmentId
-                ? `${req.protocol}://${req.get("host")}/${vendor.governmentId.replace(/\\/g, "/")}`
-                : null,
-            licenseDoc: vendor.licenseDoc
-                ? `${req.protocol}://${req.get("host")}/${vendor.licenseDoc.replace(/\\/g, "/")}`
-                : null
-        }));
-
-        res.json(paginationResult);
-
-    } catch (err) {
-        console.log(err);
-        res.status(500).json({ message: "Error fetching vendors" });
+    const query = { deleted: { $ne: true } };
+    if (status) query.status = status;
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: "i" } },
+        { businessName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+      ];
     }
+
+    const paginationResult = await paginate(Vendor, query, {
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      allowedSortFields: ["createdAt", "fullName", "businessName", "email"],
+      sort: undefined
+    });
+
+    paginationResult.data = paginationResult.data.map((vendor) => {
+      const v = buildVendorResponse(vendor, req);
+      delete v.password;
+      return v;
+    });
+
+    res.json(paginationResult);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to retrieve vendors", error: error.message });
+  }
 });
+
 
 // ============================
 // 🔹 Get Vendor Stats (Admin - KPI)
@@ -85,7 +95,7 @@ router.get("/stats", isAdmin, async (req, res) => {
 // ============================
 // 🔹 Get Single Vendor (with files)
 // ============================
-const fixPath = (filePath) => filePath.replace(/\\/g, "/");
+
 
 router.get("/:id", async (req, res) => {
     try {

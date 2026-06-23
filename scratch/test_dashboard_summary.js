@@ -1,27 +1,15 @@
-import express from "express";
 import mongoose from "mongoose";
 import Booking from "../models/BookingModel.js";
 import Venue from "../models/VenueModel.js";
 import UserVendorPayment from "../models/UserVendorPaymentModel.js";
 import User from "../models/UserModel.js";
 import Vendor from "../models/VendorModel.js";
-import { isAdmin } from "../middleare/isAdmin.js";
 
-const router = express.Router();
-
-// Simple in-memory cache (no Redis)
-let dashboardCache = null;
-let cacheTimestamp = null;
-const CACHE_TTL_MS = 60 * 1000; // 60 seconds
-
-router.get("/summary", isAdmin, async (req, res) => {
+async function run() {
   try {
-    // Check cache
-    if (dashboardCache && cacheTimestamp && (Date.now() - cacheTimestamp) < CACHE_TTL_MS) {
-      return res.json({ ...dashboardCache, cached: true });
-    }
+    await mongoose.connect("mongodb://localhost:27017/Book_My_Venue");
+    console.log("Connected to MongoDB");
 
-    // Run all aggregations in parallel
     const [
       totalBookings,
       revenueResult,
@@ -32,19 +20,12 @@ router.get("/summary", isAdmin, async (req, res) => {
       totalUsers,
       totalVendors,
     ] = await Promise.all([
-      // 1. Total bookings
       Booking.countDocuments(),
-
-      // 2. Net revenue
       UserVendorPayment.aggregate([
         { $match: { paymentStatus: "success" } },
         { $group: { _id: null, total: { $sum: "$amount" } } }
       ]),
-
-      // 3. Active venues
       Venue.countDocuments({ status: "approved", deleted: { $ne: true }, deactivated: { $ne: true } }),
-
-      // 4. Top 5 venues by revenue
       UserVendorPayment.aggregate([
         { $match: { paymentStatus: "success" } },
         { $group: { _id: "$venueId", revenue: { $sum: "$amount" } } },
@@ -61,41 +42,29 @@ router.get("/summary", isAdmin, async (req, res) => {
         { $unwind: "$venue" },
         { $project: { name: "$venue.name", revenue: 1, _id: 0 } }
       ]),
-
-      // 5. Pending bookings
       Booking.countDocuments({ status: "pending" }),
-
-      // 6. Cancelled bookings
       Booking.countDocuments({ status: "cancelled" }),
-
-      // 7. Total users
       User.countDocuments({ deleted: { $ne: true } }),
-
-      // 8. Total vendors
       Vendor.countDocuments({ deleted: { $ne: true } }),
     ]);
 
-    const summary = {
-      totalBookings,
-      netRevenue: revenueResult[0]?.total || 0,
-      activeVenues,
-      topVenues: topVenuesRaw,
-      pendingBookings,
-      cancelledBookings,
-      totalUsers,
-      totalVendors,
-      generatedAt: new Date().toISOString(),
-    };
-
-    // Save to cache
-    dashboardCache = summary;
-    cacheTimestamp = Date.now();
-
-    res.json(summary);
+    console.log("--- Dashboard Summary Verification Output ---");
+    console.log("Total Bookings:", totalBookings);
+    console.log("Net Revenue:", revenueResult[0]?.total || 0);
+    console.log("Active Venues:", activeVenues);
+    console.log("Top Venues by Revenue:", topVenuesRaw);
+    console.log("Pending Bookings:", pendingBookings);
+    console.log("Cancelled Bookings:", cancelledBookings);
+    console.log("Total Users:", totalUsers);
+    console.log("Total Vendors:", totalVendors);
+    console.log("---------------------------------------------");
+    console.log("Verification Succeeded!");
   } catch (error) {
-    console.error("Dashboard summary error:", error);
-    res.status(500).json({ error: "Failed to generate dashboard summary" });
+    console.error("Aggregation query verification failed:", error);
+  } finally {
+    await mongoose.disconnect();
+    console.log("Disconnected from MongoDB");
   }
-});
+}
 
-export default router;
+run();

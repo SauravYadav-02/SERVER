@@ -84,7 +84,7 @@ router.get("/user/:userId", async (req, res) => {
       const [totalRecords, data, allBookings] = await Promise.all([
         Booking.countDocuments({ userId }),
         Booking.find({ userId })
-          .populate("venueId", "name location")
+          .populate("venueId", "name city")
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(l),
@@ -108,7 +108,7 @@ router.get("/user/:userId", async (req, res) => {
     }
 
     const bookings = await Booking.find({ userId })
-      .populate("venueId", "name location")
+      .populate("venueId", "name city")
       .sort({ createdAt: -1 });
 
     const totalSpent = bookings.reduce((sum, b) => sum + (b.status !== "rejected" ? b.cost : 0), 0);
