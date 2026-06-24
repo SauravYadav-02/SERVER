@@ -227,43 +227,45 @@ router.get("/vendor/my", isVendor, async (req, res) => {
 // 1. Fetch Blogs (with filters/search/pagination)
 router.get("/admin", isAdmin, async (req, res) => {
   try {
-    const { page, limit, search, status } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const skip = (page - 1) * limit;
 
-    const query = {};
-    if (status) {
-      query.status = status;
+    const query = { deleted: false };
+    if (req.query.status && req.query.status !== 'all') {
+      query.status = req.query.status;
     }
 
     if (search) {
       const regex = new RegExp(search.trim(), "i");
-      const matchingVendors = await mongoose.model("Vendor").find({
-        $or: [
-          { fullName: regex },
-          { businessName: regex }
-        ]
-      }).select("_id");
-      const vendorIds = matchingVendors.map(v => v._id);
-
       query.$or = [
-        { title: { $regex: regex } },
-        { tags: { $regex: regex } },
-        { vendorId: { $in: vendorIds } }
+        { title: regex },
+        { tags: regex }
       ];
     }
 
-    if (req.query.deleted !== undefined) {
-      query.deleted = req.query.deleted === "true";
-    }
+    const [blogs, totalRecords] = await Promise.all([
+      Blog.find(query)
+        .populate({ path: "vendorId", select: "fullName businessName email phone" })
+        .sort({ [sortBy]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Blog.countDocuments(query)
+    ]);
 
-    const paginationResult = await paginate(Blog, query, {
+    const data = blogs.map(blog => formatBlogResponse(blog, req));
+
+    return res.status(200).json({
+      data,
       page,
       limit,
-      populate: { path: "vendorId", select: "fullName businessName email phone" },
-      sort: { createdAt: -1 }
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit)
     });
-
-    paginationResult.data = paginationResult.data.map(blog => formatBlogResponse(blog, req));
-    res.json(paginationResult);
   } catch (error) {
     console.error("ADMIN FETCH BLOGS ERROR:", error);
     res.status(500).json({ message: "Failed to fetch blogs for admin", error: error.message });

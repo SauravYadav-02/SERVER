@@ -229,53 +229,52 @@ router.get("/stats", isAdmin, async (req, res) => {
 // Get all bookings (admin route - Paginated)
 router.get("/", isAdmin, async (req, res) => {
   try {
-    const { page, limit, search, status, sortBy, sortOrder, startDate, endDate } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const skip = (page - 1) * limit;
 
-    const query = {};
-    if (status) query.status = status;
+    const query = { deleted: { $ne: true } };
+    if (req.query.status && req.query.status !== 'all') {
+      query.status = req.query.status;
+    }
 
-    if (startDate || endDate) {
+    if (req.query.startDate || req.query.endDate) {
       query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      if (req.query.startDate) query.createdAt.$gte = new Date(req.query.startDate);
+      if (req.query.endDate) query.createdAt.$lte = new Date(req.query.endDate);
     }
 
     if (search) {
       const regex = new RegExp(search.trim(), "i");
-
-      // Find matching users and venues first
-      const [matchingUsers, matchingVenues] = await Promise.all([
-        mongoose.model("User").find({
-          $or: [{ name: regex }, { email: regex }]
-        }).select("_id").lean(),
-        mongoose.model("Venue").find({ name: regex }).select("_id").lean(),
-      ]);
-
-      const userIds = matchingUsers.map(u => u._id);
-      const venueIds = matchingVenues.map(v => v._id);
-
       query.$or = [
-        { userId: { $in: userIds } },
-        { venueId: { $in: venueIds } },
+        { status: regex }
       ];
     }
 
-    const allowedSortFields = ["createdAt", "date", "cost", "finalAmount", "status"];
-    const paginationResult = await paginate(Booking, query, {
+    const [bookings, totalRecords] = await Promise.all([
+      Booking.find(query)
+        .populate([
+          { path: "userId", select: "name email phone" },
+          { path: "vendorId", select: "fullName email phone businessName businessType" },
+          { path: "venueId", select: "name address city state zip country" }
+        ])
+        .sort({ [sortBy]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Booking.countDocuments(query)
+    ]);
+
+    return res.status(200).json({
+      data: bookings,
       page,
       limit,
-      sortBy,
-      sortOrder,
-      allowedSortFields,
-      populate: [
-        { path: "userId", select: "name email phone" },
-        { path: "vendorId", select: "fullName email phone businessName businessType" },
-        { path: "venueId", select: "name address city state zip country" }
-      ],
-      sort: undefined
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit)
     });
-
-    res.json(paginationResult);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch all bookings: " + error.message });
   }

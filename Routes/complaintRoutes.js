@@ -99,38 +99,36 @@ router.get("/", async (req, res) => {
             return res.status(401).json({ message: "Unauthorized. Missing identifier headers." });
         }
 
-        const { page, limit, search, sortBy, sortOrder } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const search = req.query.search || '';
+        const sortBy = req.query.sortBy || 'createdAt';
+        const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+        const skip = (page - 1) * limit;
 
-        if (adminId && search) {
+        if (search) {
             const regex = new RegExp(search.trim(), "i");
-            const matchingUsers = await mongoose.model("User").find({
-                name: regex
-            }).select("_id").lean();
-            const userIds = matchingUsers.map(u => u._id);
-
             query.$or = [
                 { title: regex },
-                { description: regex },
-                { user: { $in: userIds } },
+                { status: regex }
             ];
         }
 
-        const paginationResult = await paginate(Complaint, query, {
-            page,
-            limit,
-            sortBy,
-            sortOrder,
-            allowedSortFields: ["createdAt", "status", "title"],
-            populate: [
-                { path: "user", select: "name email phone" },
-                { path: "vendor", select: "fullName businessName email" },
-                { path: "venue", select: "name city" }
-            ],
-            sort: undefined
-        });
+        const [complaints, totalRecords] = await Promise.all([
+            Complaint.find(query)
+                .populate([
+                    { path: "user", select: "name email phone" },
+                    { path: "vendor", select: "fullName businessName email" },
+                    { path: "venue", select: "name city" }
+                ])
+                .sort({ [sortBy]: sortOrder })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Complaint.countDocuments(query)
+        ]);
 
-        // Map attachment full URLs
-        paginationResult.data = paginationResult.data.map(complaint => {
+        const data = complaints.map(complaint => {
             if (complaint.attachments) {
                 complaint.attachments = complaint.attachments.map(att => 
                     att.startsWith("http") ? att : `${req.protocol}://${req.get("host")}/${att}`
@@ -139,9 +137,12 @@ router.get("/", async (req, res) => {
             return complaint;
         });
 
-        res.json({
-            success: true,
-            ...paginationResult
+        return res.status(200).json({
+            data,
+            page,
+            limit,
+            totalRecords,
+            totalPages: Math.ceil(totalRecords / limit)
         });
     } catch (error) {
         res.status(500).json({ message: "Failed to retrieve complaints", error: error.message });

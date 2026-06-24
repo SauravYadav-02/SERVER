@@ -79,35 +79,45 @@ router.post("/login", async (req, res) => {
 // Get all users (Admin - Paginated)
 router.get("/", isAdmin, async (req, res) => {
   try {
-    const { page, limit, search, status, sortBy, sortOrder } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const skip = (page - 1) * limit;
 
-    const query = { deleted: { $ne: true } };
-    if (status) query.status = status;
+    const query = { deleted: false };
+    if (req.query.status && req.query.status !== 'all') {
+      query.status = req.query.status;
+    }
+
     if (search) {
+      const regex = new RegExp(search, "i");
       query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-        { phone: { $regex: search, $options: "i" } },
-        { city: { $regex: search, $options: "i" } },
+        { name: regex },
+        { email: regex },
+        { phone: regex }
       ];
     }
 
-    const paginationResult = await paginate(User, query, {
-      page,
-      limit,
-      sortBy,
-      sortOrder,
-      allowedSortFields: ["createdAt", "name", "email", "city"],
-      sort: undefined
-    });
+    const [users, totalRecords] = await Promise.all([
+      User.find(query).sort({ [sortBy]: sortOrder }).skip(skip).limit(limit).lean(),
+      User.countDocuments(query)
+    ]);
 
-    paginationResult.data = paginationResult.data.map((user) => {
+    const data = users.map((user) => {
       const u = buildUserResponse(user, req);
       delete u.password;
       return u;
     });
 
-    res.json(paginationResult);
+    return res.status(200).json({
+      data,
+      page,
+      limit,
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit)
+    });
   } catch (error) {
     res.status(500).json({ message: "Failed to retrieve users", error: error.message });
   }

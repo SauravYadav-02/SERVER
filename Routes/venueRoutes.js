@@ -197,8 +197,29 @@ const autoReactivateExpiredSuspensions = async () => {
     );
   } catch (err) {
     console.error("Error auto-reactivating expired suspensions:", err);
-  }
+}
 };
+
+// ─────────────────────────────────────────────────────────────
+// ✅ GET /venues/public-stats — Public statistics for About Us page
+// ─────────────────────────────────────────────────────────────
+router.get("/public-stats", async (req, res) => {
+  try {
+    const [venuesCount, uniqueCities, uniqueUsers] = await Promise.all([
+      Venue.countDocuments({ status: "approved", deleted: { $ne: true }, deactivated: { $ne: true } }),
+      Venue.distinct("city", { status: "approved", deleted: { $ne: true }, deactivated: { $ne: true } }),
+      Booking.distinct("userId", { status: { $in: ["approved", "success"] } })
+    ]);
+
+    res.json({
+      venuesCount,
+      citiesCount: uniqueCities.filter(Boolean).length,
+      customersCount: uniqueUsers.filter(Boolean).length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─────────────────────────────────────────────────────────────
 // ✅ GET /venues/discover — Paginated, searchable, filterable
@@ -281,6 +302,7 @@ router.get("/discover", async (req, res) => {
       case "rating_high":   sortObj = { averageRating: -1, totalReviews: -1 };     break;
       case "capacity_high": sortObj = { capacity: -1 };                            break;
       case "oldest":        sortObj = { createdAt: 1 };                            break;
+      case "newest":        sortObj = { createdAt: -1 };                           break;
       default:              sortObj = { createdAt: -1 };   // newest
     }
 
@@ -322,26 +344,56 @@ router.get("/", async (req, res) => {
   try {
     await autoReactivateExpiredSuspensions();
 
-    // Admin bypass: pass ?admin=true to see all venues regardless of subscription
-    if (req.query.admin === "true") {
-      let venues = await Venue.find()
-        .populate("vendorId", "fullName email");
-      venues = await attachRatingStats(venues);
-      return res.json(venues);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const skip = (page - 1) * limit;
+
+    const query = { deleted: false };
+    if (req.query.admin !== "true") {
+      query.status = "approved";
+      query.deactivated = { $ne: true };
+    } else {
+      if (req.query.status && req.query.status !== 'all') {
+        query.status = req.query.status;
+      }
     }
 
-    // Optimized query: filter directly in DB for better performance
-    let visibleVenues = await Venue.find({
-      status: "approved",
-      deleted: { $ne: true },
-      deactivated: { $ne: true }
-      // isSubscriptionActive: true
-    })
-      .populate("vendorId", "fullName email");
+    if (search) {
+      const regex = new RegExp(search, "i");
+      query.$or = [
+        { name: regex },
+        { location: regex },
+        { city: regex }
+      ];
+    }
 
-    visibleVenues = await attachRatingStats(visibleVenues);
+    const [venues, totalRecords] = await Promise.all([
+      Venue.find(query)
+        .populate("vendorId", "fullName email")
+        .sort({ [sortBy]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Venue.countDocuments(query)
+    ]);
 
-    res.json(visibleVenues);
+    const data = await attachRatingStats(venues);
+
+    // Safety fallback: if no pagination parameters are specified and this is a public request, return a flat array
+    if (!req.query.page && !req.query.limit && req.query.admin !== "true") {
+      return res.status(200).json(data);
+    }
+
+    return res.status(200).json({
+      data,
+      page,
+      limit,
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit)
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

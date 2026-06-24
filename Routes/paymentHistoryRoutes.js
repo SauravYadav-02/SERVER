@@ -31,8 +31,48 @@ router.get("/vendor/:vendorId", isVendor, getVendorPaymentHistory);
 // POST /payments — create payment history entry (admin or internal system)
 router.post("/", isAdmin, createPaymentHistoryEntry);
 
-// GET /payments/admin-vendor — subscription and full-payment records only
-router.get("/admin-vendor", isAdmin, getAdminVendorPayments);
+router.get("/admin-vendor", isAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const skip = (page - 1) * limit;
+
+    const query = { type: { $in: ["subscription", "full payment"] } };
+
+    if (search) {
+      const regex = new RegExp(search.trim(), "i");
+      query.$or = [
+        { status: regex },
+        { method: regex }
+      ];
+    }
+
+    const [payments, totalRecords] = await Promise.all([
+      PaymentHistory.find(query)
+        .populate("vendorId", "fullName email phone businessName businessType address state pincode status")
+        .populate("userId", "name username email phone")
+        .populate("adminId", "username name fullName")
+        .sort({ [sortBy]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      PaymentHistory.countDocuments(query)
+    ]);
+
+    return res.status(200).json({
+      data: payments,
+      page,
+      limit,
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit)
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch admin-vendor payments: " + error.message });
+  }
+});
 
 // GET /payments — all payment history (admin only)
 router.get("/", isAdmin, async (req, res) => {

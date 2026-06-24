@@ -24,6 +24,7 @@ import reportRoutes from "./Routes/reportRoutes.js";
 import todoRoutes from "./Routes/todoRoutes.js";
 import blogRoutes from "./Routes/blogRoutes.js";
 import dashboardRoutes from "./Routes/dashboardRoutes.js";
+import contactRoutes from "./Routes/contactRoutes.js";
 
 
 import remainingPaymentRoutes from "./Routes/remainingPaymentRoutes.js";
@@ -67,6 +68,7 @@ app.use("/api/wishlist", wishlistRoutes);
 app.use("/", mockPaymentRoutes);
 app.use("/terms", termsRoutes);
 app.use("/complaints", complaintRoutes);
+app.use("/contacts", contactRoutes);
 app.use("/reports", reportRoutes);
 app.use("/todos", todoRoutes);
 app.use("/api/notifications", notificationRoutes);

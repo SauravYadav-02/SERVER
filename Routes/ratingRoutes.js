@@ -3,6 +3,7 @@ import RatingFeedback from "../models/RatingFeedbackModel.js";
 import Venue from "../models/VenueModel.js";
 import User from "../models/UserModel.js";
 import Vendor from "../models/VendorModel.js";
+import Booking from "../models/BookingModel.js";
 
 const router = express.Router();
 
@@ -93,6 +94,64 @@ router.get("/venue/:venueId", async (req, res) => {
   }
 });
 
+// GET /ratings/venue/:venueId/can-review?userId=
+router.get("/venue/:venueId/can-review", async (req, res) => {
+  try {
+    const { venueId } = req.params;
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.json({ canReview: false, reason: "not_logged_in" });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const completedBooking = await Booking.findOne({
+      userId,
+      venueId,
+      status: { $in: ["success", "approved"] },
+      $expr: {
+        $lt: [
+          {
+            $dateFromString: {
+              dateString: "$date",
+              format: "%Y-%m-%d"
+            }
+          },
+          today
+        ]
+      }
+    });
+
+    if (!completedBooking) {
+      // Check if they have a future booking (event not yet passed)
+      const futureBooking = await Booking.findOne({
+        userId,
+        venueId,
+        status: { $in: ["success", "approved", "pending"] },
+      });
+
+      return res.json({
+        canReview: false,
+        reason: futureBooking ? "event_not_passed" : "no_booking",
+        message: futureBooking
+          ? "You can review this venue after your event date has passed."
+          : "You must book this venue before leaving a review.",
+      });
+    }
+
+    return res.json({
+      canReview: true,
+      bookingDate: completedBooking.date,
+      reason: null,
+      message: null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST Add or update a review
 router.post("/venue/:venueId", async (req, res) => {
   try {
@@ -120,6 +179,34 @@ router.post("/venue/:venueId", async (req, res) => {
 
     if (user.status === "suspended") {
       return res.status(403).json({ message: "Access denied. Your account is suspended." });
+    }
+
+    // Check if user has a completed booking for this venue
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const completedBooking = await Booking.findOne({
+      userId: user._id,
+      venueId: venue._id,
+      status: { $in: ["success", "approved"] },
+      $expr: {
+        $lt: [
+          {
+            $dateFromString: {
+              dateString: "$date",
+              format: "%Y-%m-%d"
+            }
+          },
+          today
+        ]
+      }
+    });
+
+    if (!completedBooking) {
+      return res.status(403).json({
+        message: "You can only review a venue after your event date has passed.",
+        code: "NO_COMPLETED_BOOKING"
+      });
     }
 
     // Check for existing review
@@ -278,44 +365,45 @@ router.get("/vendor/:vendorId", async (req, res) => {
 // GET all reviews (admin use)
 router.get("/", async (req, res) => {
   try {
-    const { page, limit, status } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const skip = (page - 1) * limit;
+
     const query = {};
-    if (status) {
-      query.status = status;
+    if (req.query.status && req.query.status !== 'all') {
+      query.status = req.query.status;
     }
 
-    if (page || limit) {
-      const p = Math.max(1, parseInt(page) || 1);
-      const l = Math.max(1, parseInt(limit) || 10);
-      const skip = (p - 1) * l;
-
-      const [totalRecords, reviews] = await Promise.all([
-        RatingFeedback.countDocuments(query),
-        RatingFeedback.find(query)
-          .populate("userId", "name email profilePhoto")
-          .populate("venueId", "name vendorId")
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(l)
-      ]);
-
-      const totalPages = Math.ceil(totalRecords / l);
-
-      return res.json({
-        success: true,
-        data: buildReviewsResponse(reviews, req),
-        page: p,
-        limit: l,
-        totalRecords,
-        totalPages
-      });
+    if (search) {
+      const regex = new RegExp(search.trim(), "i");
+      query.$or = [
+        { feedback: regex }
+      ];
     }
 
-    const reviews = await RatingFeedback.find(query)
-      .populate("userId", "name email profilePhoto")
-      .populate("venueId", "name vendorId")
-      .sort({ createdAt: -1 });
-    res.json(buildReviewsResponse(reviews, req));
+    const [reviews, totalRecords] = await Promise.all([
+      RatingFeedback.find(query)
+        .populate("userId", "name email profilePhoto")
+        .populate("venueId", "name vendorId")
+        .sort({ [sortBy]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      RatingFeedback.countDocuments(query)
+    ]);
+
+    const data = buildReviewsResponse(reviews, req);
+
+    return res.status(200).json({
+      data,
+      page,
+      limit,
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit)
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

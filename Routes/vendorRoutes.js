@@ -34,35 +34,45 @@ const buildVendorResponse = (vendor, req) => {
 // ============================
 router.get("/", isAdmin, async (req, res) => {
   try {
-    const { page, limit, search, status, sortBy, sortOrder } = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+    const skip = (page - 1) * limit;
 
-    const query = { deleted: { $ne: true } };
-    if (status) query.status = status;
+    const query = { deleted: false };
+    if (req.query.status && req.query.status !== 'all') {
+      query.status = req.query.status;
+    }
+
     if (search) {
+      const regex = new RegExp(search, "i");
       query.$or = [
-        { fullName: { $regex: search, $options: "i" } },
-        { businessName: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-        { phone: { $regex: search, $options: "i" } },
+        { fullName: regex },
+        { email: regex },
+        { phone: regex }
       ];
     }
 
-    const paginationResult = await paginate(Vendor, query, {
-      page,
-      limit,
-      sortBy,
-      sortOrder,
-      allowedSortFields: ["createdAt", "fullName", "businessName", "email"],
-      sort: undefined
-    });
+    const [vendors, totalRecords] = await Promise.all([
+      Vendor.find(query).sort({ [sortBy]: sortOrder }).skip(skip).limit(limit).lean(),
+      Vendor.countDocuments(query)
+    ]);
 
-    paginationResult.data = paginationResult.data.map((vendor) => {
+    const data = vendors.map((vendor) => {
       const v = buildVendorResponse(vendor, req);
       delete v.password;
       return v;
     });
 
-    res.json(paginationResult);
+    return res.status(200).json({
+      data,
+      page,
+      limit,
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit)
+    });
   } catch (error) {
     res.status(500).json({ message: "Failed to retrieve vendors", error: error.message });
   }
