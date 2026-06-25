@@ -109,7 +109,7 @@ const tryActivateNextPlan = async (vendorId) => {
   }
 
   // Activate the plan
-  await activatePlan(vendorId, plan, new Date());
+  await activatePlan(vendorId, plan, new Date(), null, { skipPaymentHistory: true });
 
   // Mark queue item as activated
   nextInQueue.isActivated = true;
@@ -200,8 +200,10 @@ const syncSubscriptionStatus = async (sub) => {
 
 export const activatePlan = async (vendorId, plan, startDate = new Date(), endDate = null, optionsOrAdminId = {}) => {
   let adminId = null;
+  let skipPaymentHistory = false;
   if (optionsOrAdminId && typeof optionsOrAdminId === "object") {
     adminId = optionsOrAdminId.adminId || null;
+    skipPaymentHistory = !!optionsOrAdminId.skipPaymentHistory;
   } else {
     adminId = optionsOrAdminId || null;
   }
@@ -265,19 +267,21 @@ export const activatePlan = async (vendorId, plan, startDate = new Date(), endDa
   }
 
   // Create payment history for subscription
-  try {
-    await createPaymentHistory({
-      vendorId,
-      adminId,
-      type: "subscription",
-      relatedId: subscription._id,
-      amount: plan.price,
-      paymentStatus: "success",
-      transactionId: `SUB-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-      description: `Payment for ${plan.name} subscription`,
-    });
-  } catch (error) {
-    console.error("Failed to create payment history for subscription:", error.message);
+  if (!skipPaymentHistory) {
+    try {
+      await createPaymentHistory({
+        vendorId,
+        adminId,
+        type: "subscription",
+        relatedId: subscription._id,
+        amount: plan.price,
+        paymentStatus: "success",
+        transactionId: `SUB-${Date.now()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+        description: `Payment for ${plan.name} subscription`,
+      });
+    } catch (error) {
+      console.error("Failed to create payment history for subscription:", error.message);
+    }
   }
 
   return subscription;
@@ -373,7 +377,7 @@ export const confirmSubscriptionPayment = async (vendorId, transactionId) => {
     const hasActiveSub = existingSub && existingSub.status !== "expired";
 
     if (!hasActiveSub) {
-      const sub = await activatePlan(vendorId, plan);
+      const sub = await activatePlan(vendorId, plan, new Date(), null, { skipPaymentHistory: true });
       paymentRecord.relatedId = sub._id;
       await paymentRecord.save();
       return {
@@ -817,7 +821,7 @@ export const activateQueuedPlans = async () => {
       continue;
     }
 
-    await activatePlan(vendorId, plan, new Date());
+    await activatePlan(vendorId, plan, new Date(), null, { skipPaymentHistory: true });
 
     nextInQueue.isActivated = true;
     nextInQueue.activatedAt = new Date();
