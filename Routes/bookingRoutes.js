@@ -231,12 +231,14 @@ router.get("/", isAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const search = req.query.search || '';
+    const search = (req.query.search || '').trim();
     const sortBy = req.query.sortBy || 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
     const skip = (page - 1) * limit;
 
+    // ── Base query ──────────────────────────────────────────────────────
     const query = { deleted: { $ne: true } };
+
     if (req.query.status && req.query.status !== 'all') {
       query.status = req.query.status;
     }
@@ -247,25 +249,45 @@ router.get("/", isAdmin, async (req, res) => {
       if (req.query.endDate) query.createdAt.$lte = new Date(req.query.endDate);
     }
 
+    // ── Global search — applied BEFORE pagination ───────────────────────
     if (search) {
-      const regex = new RegExp(search.trim(), "i");
-      query.$or = [
-        { status: regex }
-      ];
+      const regex = new RegExp(search, "i");
+
+      // Simultaneously search across related collections
+      const [matchedUsers, matchedVenues, matchedVendors] = await Promise.all([
+        User.find({ $or: [{ name: regex }, { email: regex }, { phone: regex }] }).select("_id").lean(),
+        Venue.find({ $or: [{ name: regex }, { city: regex }] }).select("_id").lean(),
+        Vendor.find({ $or: [{ fullName: regex }, { businessName: regex }, { email: regex }] }).select("_id").lean(),
+      ]);
+
+      const orClauses = [];
+
+      if (matchedUsers.length)  orClauses.push({ userId:   { $in: matchedUsers.map(u => u._id) } });
+      if (matchedVenues.length) orClauses.push({ venueId:  { $in: matchedVenues.map(v => v._id) } });
+      if (matchedVendors.length) orClauses.push({ vendorId: { $in: matchedVendors.map(v => v._id) } });
+
+      // Also match by booking ObjectId directly if valid
+      if (mongoose.Types.ObjectId.isValid(search)) {
+        orClauses.push({ _id: new mongoose.Types.ObjectId(search) });
+      }
+
+      // If nothing in any collection matched, force empty result
+      query.$or = orClauses.length > 0 ? orClauses : [{ _id: null }];
     }
 
+    // ── Fetch paginated data + accurate filtered count ──────────────────
     const [bookings, totalRecords] = await Promise.all([
       Booking.find(query)
         .populate([
-          { path: "userId", select: "name email phone" },
+          { path: "userId",   select: "name email phone" },
           { path: "vendorId", select: "fullName email phone businessName businessType" },
-          { path: "venueId", select: "name address city state zip country" }
+          { path: "venueId",  select: "name address city state zip country" }
         ])
         .sort({ [sortBy]: sortOrder })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Booking.countDocuments(query)
+      Booking.countDocuments(query)   // ← counts only FILTERED results
     ]);
 
     return res.status(200).json({
@@ -279,6 +301,7 @@ router.get("/", isAdmin, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch all bookings: " + error.message });
   }
 });
+
 
 // Cancel booking
 router.post("/:bookingId/cancel", async (req, res) => {
@@ -495,6 +518,123 @@ router.put("/:bookingId/process-refund", async (req, res) => {
   } catch (error) {
     console.error("Error processing refund:", error);
     res.status(500).json({ error: error.message || "Failed to process refund" });
+  }
+});
+
+// Vendor cancel booking — cancels + processes full refund immediately
+router.post("/:bookingId/vendor-cancel", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { vendorId, reason } = req.body;
+
+    if (!vendorId) {
+      return res.status(400).json({ error: "vendorId is required" });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    if (booking.vendorId.toString() !== vendorId) {
+      return res.status(403).json({ error: "Unauthorized: This booking does not belong to your venue" });
+    }
+
+    const uncancelableStatuses = ["cancelled", "rejected", "failed"];
+    if (uncancelableStatuses.includes(booking.status)) {
+      return res.status(400).json({ error: "Booking cannot be cancelled" });
+    }
+
+    // Vendor cancellation = full refund of everything the user paid
+    const refundAmount = booking.amountPaid || 0;
+    const refundTxId = "REF-VND-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+
+    booking.status = "cancelled";
+    booking.paymentStatus = "cancelled";
+    booking.cancellation = {
+      cancelledAt: new Date(),
+      cancelledBy: "vendor",
+      refundTier: "full",
+      refundAmount,
+      refundStatus: refundAmount > 0 ? "processed" : "none",  // immediately processed
+      reason: reason || "Cancelled by venue owner",
+      daysBeforeEvent: 0
+    };
+
+    if (refundAmount > 0) {
+      if (!booking.transactions) booking.transactions = [];
+      booking.transactions.push({
+        amount: refundAmount,
+        method: "online",
+        loggedBy: "vendor",
+        note: `Full refund processed — vendor cancelled booking (Txn: ${refundTxId})`,
+        paidAt: new Date()
+      });
+    }
+
+    await booking.save();
+
+    // Fetch user + vendor details for records & notifications
+    const [userObj, vendorObj] = await Promise.all([
+      User.findById(booking.userId).select("name email"),
+      Vendor.findById(booking.vendorId).select("fullName email businessName")
+    ]);
+
+    // Create processed refund payment record
+    if (refundAmount > 0) {
+      try {
+        await UserVendorPayment.create({
+          bookingId: booking._id,
+          userId: booking.userId,
+          userName: userObj?.name || "",
+          userEmail: userObj?.email || "",
+          vendorId: booking.vendorId,
+          vendorName: vendorObj?.fullName || "",
+          vendorEmail: vendorObj?.email || "",
+          venueId: booking.venueId,
+          amount: refundAmount,
+          paymentStatus: "success",          // already processed
+          transactionId: refundTxId,
+          paymentTimestamp: new Date(),
+          description: `Full refund — vendor cancelled booking on ${booking.date}`
+        });
+      } catch (err) {
+        console.error("Failed to create refund record:", err.message);
+      }
+    }
+
+    // Notification 1 — Booking cancelled
+    await Notification.create({
+      userId: booking.userId,
+      type: "booking_cancelled",
+      title: "Your Booking Was Cancelled by the Venue",
+      message: `We're sorry — ${vendorObj?.businessName || "the venue"} has cancelled your booking scheduled for ${booking.date}.${reason ? ` Reason: "${reason}".` : ""}`,
+      relatedBookingId: booking._id,
+      relatedVenueId: booking.venueId,
+    });
+
+    // Notification 2 — Refund processed (if applicable)
+    if (refundAmount > 0) {
+      await Notification.create({
+        userId: booking.userId,
+        type: "general",
+        title: "Refund Processed ✅",
+        message: `A full refund of ₹${refundAmount.toLocaleString("en-IN")} has been processed for your cancelled booking on ${booking.date}. Transaction ID: ${refundTxId}. Amount will reflect in your account within 5–7 business days.`,
+        relatedBookingId: booking._id,
+        relatedVenueId: booking.venueId,
+      });
+    }
+
+    res.json({
+      success: true,
+      booking,
+      refundAmount,
+      refundTxId,
+      message: "Booking cancelled and refund processed successfully"
+    });
+  } catch (error) {
+    console.error("Error in vendor-cancel:", error);
+    res.status(500).json({ error: error.message || "Failed to cancel booking" });
   }
 });
 
